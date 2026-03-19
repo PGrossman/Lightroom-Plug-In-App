@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+  <title>XMP File Generator for Lightroom</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <h1>XMP File Generator for Lightroom</h1>
+    
+    <!-- Tab Navigation -->
+    <div class="tab-container">
+      <button class="tab-button active" data-tab="ingest">Ingest / Process Images</button>
+      <button class="tab-button" data-tab="results">Visual Analysis</button>
+      <button class="tab-button" data-tab="ai-analysis">AI Analysis</button>
+      <button class="tab-button" data-tab="personal-data">Personal Data</button>
+      <button class="tab-button" data-tab="settings">Settings</button>
+    </div>
+
+    <!-- Tab Content -->
+    <div class="tab-content">
+      
+      <!-- Ingest Tab -->
+      <div id="ingest-tab" class="tab-panel active">
+        
+        <!-- Three equal-width columns -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; align-items: stretch;">
+          
+          <!-- COLUMN 1: Status -->
+          <div style="display: flex; flex-direction: column; gap: 15px;">
+            
+            <!-- Status Panel -->
+            <div class="status-panel" style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; flex: 1; display: flex; flex-direction: column;">
+              <h2 style="font-size: 18px; margin: 0 0 15px 0; color: #2c3e50;">Status</h2>
+              
+              <div class="status-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                <div class="status-item">
+                  <span class="status-label" style="display: block; font-size: 13px; color: #6c757d; margin-bottom: 4px;">Total Files:</span>
+                  <span class="status-value" id="totalFiles" style="display: block; font-size: 28px; font-weight: 700; color: #2c3e50;">0</span>
+                </div>
+                <div class="status-item">
+                  <span class="status-label" style="display: block; font-size: 13px; color: #6c757d; margin-bottom: 4px;">Files to Process:</span>
+                  <span class="status-value" id="filesToProcess" style="display: block; font-size: 28px; font-weight: 700; color: #2c3e50;">0</span>
+                </div>
+                <div class="status-item">
+                  <span class="status-label" style="display: block; font-size: 13px; color: #6c757d; margin-bottom: 4px;">Bracketed Groups:</span>
+                  <span class="status-value" id="bracketedGroups" style="display: block; font-size: 28px; font-weight: 700; color: #2c3e50;">0</span>
+                </div>
+                <div class="status-item">
+                  <span class="status-label" style="display: block; font-size: 13px; color: #6c757d; margin-bottom: 4px;">Single Images:</span>
+                  <span class="status-value" id="singleImages" style="display: block; font-size: 28px; font-weight: 700; color: #2c3e50;">0</span>
+                </div>
+              </div>
+              
+              <div class="progress-section" style="margin-top: auto;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #495057; font-size: 14px;">Progress:</label>
+                <div class="progress-bar" style="width: 100%; height: 24px; background-color: #e9ecef; border-radius: 12px; overflow: hidden; margin-bottom: 8px;">
+                  <div class="progress-fill" id="progressFill" style="height: 100%; background: linear-gradient(90deg, #3498db 0%, #2ecc71 100%); width: 0%; transition: width 0.3s ease;"></div>
+                </div>
+                <div class="progress-text" id="progressText" style="font-size: 14px; color: #6c757d; font-weight: 500; text-align: center;">0%</div>
+              </div>
+            </div>
+
+            <!-- Process Images Button -->
+            <button id="processImagesBtn" class="primary-button" disabled style="width: 100%; padding: 14px; font-size: 16px; font-weight: 600; border-radius: 8px; background: #3498db; color: white; border: none; transition: all 0.3s;">
+              ⚡ Process Images
+            </button>
+            
+            <!-- Skip Clustering Checkbox -->
+            <div style="margin-top: 15px; padding: 12px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px;">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: #856404;">
+                <input type="checkbox" id="skipClusteringCheckbox" style="width: 18px; height: 18px; cursor: pointer;">
+                <span style="font-weight: 500;">⚡ Skip Clustering</span>
+              </label>
+              
+              <!-- CLIP Value Input -->
+              <div style="margin-top: 12px;">
+                <label for="clipValueInput" style="display: block; margin-bottom: 6px; font-weight: 500; color: #856404; font-size: 13px;">
+                  CLIP Value:
+                </label>
+                <input 
+                  type="number" 
+                  id="clipValueInput" 
+                  min="0" 
+                  max="100" 
+                  value="95" 
+                  style="width: 100%; padding: 8px 10px; border: 1px solid #ffc107; border-radius: 4px; font-size: 14px; background: white; color: #2c3e50;">
+              </div>
+            </div>
+          </div>
+
+          <!-- COLUMN 2: Processing Options -->
+          <div style="background: #f8f9fa; border: 2px solid #3498db; border-radius: 8px; padding: 20px; display: flex; flex-direction: column;">
+            <h3 style="margin: 0 0 20px 0; font-size: 16px; color: #2c3e50; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+              <span>⚙️</span>
+              <span>Processing Options</span>
+            </h3>
+            <!-- Active Gemini Model Dropdown -->
+            <div style="margin-bottom: 12px;">
+              <label for="activeGeminiModelDropdown" style="display: block; margin-bottom: 7px; font-weight: 500; color: #2c3e50; font-size: 14px;">
+                🤖 Active AI Model:
+              </label>
+              <select id="activeGeminiModelDropdown" style="width: 100%; padding: 10px 12px; border: 1px solid #ced4da; border-radius: 6px; font-size: 14px; background: white; box-sizing: border-box;">
+                <option value="">Loading allowed models...</option>
+              </select>
+              <span style="display: block; margin-top: 5px; font-size: 12px; color: #6c757d;">
+                Select which enabled model to use for analysis.
+              </span>
+            </div>
+
+            <!-- Anchor Context Input -->
+            <div style="margin-bottom: 18px;">
+              <label for="anchorContextInput" style="display: block; margin-bottom: 7px; font-weight: 500; color: #2c3e50; font-size: 14px;">
+                📝 Anchor Context (Optional):
+              </label>
+              <textarea id="anchorContextInput" rows="4" placeholder="E.g., Event Name, specific location info, or global keywords for all images..." style="width: 100%; padding: 10px 12px; border: 1px solid #ced4da; border-radius: 6px; font-size: 14px; background: white; resize: vertical; box-sizing: border-box;"></textarea>
+              <span style="display: block; margin-top: 5px; font-size: 12px; color: #6c757d;">
+                This context is prepended to the AI prompt and applies to all images.
+              </span>
+            </div>
+          </div>
+
+          <!-- COLUMN 3: Drag & Drop -->
+          <div id="dropzone" style="background-color: #f8f9fa; border: 2px dashed #cbd5e0; border-radius: 12px; padding: 40px 30px; display: flex; align-items: center; justify-content: center; transition: all 0.3s; cursor: pointer;">
+            <div style="text-align: center; pointer-events: none;">
+              <div style="font-size: 80px; margin-bottom: 20px; opacity: 0.6;">📁</div>
+              <h3 style="margin: 0 0 12px 0; color: #2c3e50; font-size: 20px; font-weight: 600;">Drag & drop files here</h3>
+              <p style="margin: 0 0 18px 0; color: #7f8c8d; font-size: 15px;">or</p>
+              <button id="selectDirBtn" style="padding: 12px 28px; font-size: 15px; font-weight: 500; background: white; border: 2px solid #3498db; color: #3498db; border-radius: 8px; cursor: pointer; transition: all 0.3s; pointer-events: all;">
+                Select Directory
+              </button>
+              <p style="margin: 20px 0 0 0; color: #95a5a6; font-size: 13px;">
+                Supports: RAW, JPG, PNG, TIFF, PSD
+              </p>
+            </div>
+          </div>
+
+        </div>
+
+
+        <!-- Results Table with Pagination -->
+        <div class="table-container" id="resultsTable" style="display: none;">
+          <!-- Top pagination -->
+          <div class="pagination-controls top" id="paginationTop" style="display: none; margin-bottom: 20px;">
+            <div class="pagination-left">
+              <span id="pageInfoTop" class="pagination-info">Showing 1-10 of 0</span>
+            </div>
+            <div class="pagination-buttons">
+              <button id="firstPageTop">First</button>
+              <button id="prevPageTop">Previous</button>
+              <button id="nextPageTop">Next</button>
+              <button id="lastPageTop">Last</button>
+            </div>
+          </div>
+
+          <!-- Scrollable table with fixed header -->
+          <table class="results-table" id="tableWrapper" style="display: none;">
+            <thead>
+              <tr>
+                <th style="width: 250px;">Parent Image</th>
+                <th style="width: 500px;">Child Images</th>
+                <th style="width: 200px;">Status</th>
+              </tr>
+            </thead>
+            <tbody id="resultsTableBody">
+              <!-- Rows will be inserted here -->
+            </tbody>
+          </table>
+
+          <!-- Bottom pagination -->
+          <div class="pagination-controls bottom" id="paginationBottom" style="display: none; margin-top: 20px;">
+            <div class="pagination-info">
+              <span id="pageInfoBottom">Showing 1-10 of 0</span>
+            </div>
+            <div class="pagination-buttons">
+              <button id="firstPageBottom">First</button>
+              <button id="prevPageBottom">Previous</button>
+              <button id="nextPageBottom">Next</button>
+              <button id="lastPageBottom">Last</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results Tab -->
+      <div id="results-tab" class="tab-panel">
+        <h2>Processing Results</h2>
+        
+        <div id="resultsContent">
+          <!-- Empty state - will be replaced when data loads -->
+          <div class="no-results">
+            <h3>No Processed Results</h3>
+            <p>No images have been processed yet. Scan a directory and process some images to see results here.</p>
+            <button onclick="document.querySelector('[data-tab=\'ingest\']').click()" class="select-btn">
+              Go to Ingest Tab
+            </button>
+          </div>
+        </div>
+
+        <!-- Results Table (hidden by default, shown when data loads) -->
+        <div id="resultsTableContainer" style="display: none;">
+          
+          <!-- Run AI Analysis Button -->
+          <div style="text-align: center; margin: 20px 0;">
+            <button id="runAnalysisBtn" class="analyze-ai-btn" style="padding: 14px 32px; font-size: 16px;">
+              <svg class="ai-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                <path d="M2 17l10 5 10-5"/>
+                <path d="M2 12l10 5 10-5"/>
+              </svg>
+              Run AI Analysis
+            </button>
+            <p style="font-size: 12px; color: #6c757d; margin-top: 8px;">
+              Analyzes all clusters. Preview/edit prompt for each image using the button under each parent image.
+            </p>
+          </div>
+          
+          <!-- Top pagination -->
+          <div class="pagination-controls top" id="resultsPaginationTop">
+            <div class="pagination-left">
+              <span id="resultsPageInfoTop" class="pagination-info">Showing 0-0 of 0</span>
+            </div>
+            <div class="pagination-buttons">
+              <button id="resultsFirstPageTop">First</button>
+              <button id="resultsPrevPageTop">Previous</button>
+              <button id="resultsNextPageTop">Next</button>
+              <button id="resultsLastPageTop">Last</button>
+            </div>
+          </div>
+
+          <!-- Table wrapper with scrolling and sticky headers -->
+          <div id="resultsTableWrapper" class="table-wrapper">
+            <table class="results-table">
+              <thead>
+                <tr>
+                  <th style="width: 200px;">Parent Image</th>
+                  <th style="width: 300px;">Similar Parent Representatives</th>
+                  <th style="width: 250px;">Keywords</th>
+                  <th style="width: 200px;">GPS Coordinates</th>
+                </tr>
+              </thead>
+              <tbody id="processedResultsTableBody">
+                <!-- Rows will be inserted here -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Bottom pagination -->
+          <div class="pagination-controls bottom" id="resultsPaginationBottom">
+            <div class="pagination-info">
+              <span id="resultsPageInfoBottom">Showing 0-0 of 0</span>
+            </div>
+            <div class="pagination-buttons">
+              <button id="resultsFirstPageBottom">First</button>
+              <button id="resultsPrevPageBottom">Previous</button>
+              <button id="resultsNextPageBottom">Next</button>
+              <button id="resultsLastPageBottom">Last</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI Analysis Tab -->
+      <div id="ai-analysis-tab" class="tab-panel">
+        
+        <!-- Header with Title and Generate Button -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <div>
+            <h2 style="margin: 0;">AI Metadata Analysis</h2>
+            <p style="margin: 5px 0 0 0; font-size: 14px; color: #6c757d;">
+              Select Cluster to Analyze
+            </p>
+          </div>
+          
+          <!-- Generate XMP Button (Top Right) -->
+          <button id="generateAllXMPBtn" class="select-btn" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); padding: 12px 32px; font-size: 16px; white-space: nowrap; display: none;" disabled>
+            ✅ Generate XMP
+          </button>
+          
+          <!-- Result Display -->
+          <div id="xmpResultDisplay" style="display: none; text-align: right; margin-top: 8px; font-size: 14px; color: #28a745; font-weight: 600;">
+            <!-- Results will be shown here -->
+          </div>
+        </div>
+        
+        <!-- Empty State -->
+        <div id="aiAnalysisEmpty" class="no-results">
+          <h3>No Analysis Available</h3>
+          <p>Go to the Visual Analysis tab and click "Run Analysis" to generate metadata for clusters.</p>
+          <button onclick="document.querySelector('[data-tab=\'results\']').click()" class="select-btn">
+            Go to Visual Analysis
+          </button>
+        </div>
+        
+        <!-- Scrollable Card List -->
+        <div id="aiAnalysisCardList" style="display: none;">
+          <div id="clusterCardsContainer" class="cluster-cards-container">
+            <!-- Cards will be inserted here by JavaScript -->
+          </div>
+        </div>
+        
+        <!-- Edit Modal (Hidden by default) -->
+        <div id="editMetadataModal" class="modal-overlay" style="display: none;">
+          <div class="modal-content">
+            <!-- Modal Header -->
+            <div class="modal-header">
+              <h2>Edit Metadata</h2>
+              <button class="modal-close-btn" id="editModalCloseBtn">×</button>
+            </div>
+            
+            <!-- Modal Body (Scrollable) -->
+            <div class="modal-body">
+              <!-- Thumbnail Preview -->
+              <div style="text-align: center; margin-bottom: 20px;">
+                <img id="modalThumbnail" src="" alt="Preview" style="max-width: 300px; max-height: 200px; border-radius: 8px; border: 2px solid #dee2e6;">
+                <p id="modalFilename" style="font-size: 12px; color: #6c757d; margin-top: 8px;"></p>
+              </div>
+              
+              <!-- All Editable Fields -->
+              <div class="metadata-section">
+                
+                <!-- Title -->
+                <div class="metadata-field">
+                  <label for="modalMetaTitle">Title:</label>
+                  <input type="text" id="modalMetaTitle" class="metadata-input" placeholder="Image title">
+                </div>
+                
+                <!-- Description -->
+                <div class="metadata-field">
+                  <label for="modalMetaDescription">Description:</label>
+                  <textarea id="modalMetaDescription" class="metadata-textarea" rows="3" placeholder="Detailed description"></textarea>
+                </div>
+                
+                <!-- Caption -->
+                <div class="metadata-field">
+                  <label for="modalMetaCaption">Caption:</label>
+                  <textarea id="modalMetaCaption" class="metadata-textarea" rows="2" placeholder="Social media caption"></textarea>
+                </div>
+                
+                <!-- GPS Coordinates -->
+                <div class="metadata-field">
+                  <label>GPS Coordinates:</label>
+                  <div class="location-grid">
+                    <input type="text" id="modalGpsLat" class="metadata-input" placeholder="Latitude">
+                    <input type="text" id="modalGpsLon" class="metadata-input" placeholder="Longitude">
+                  </div>
+                </div>
+                
+                <!-- Keywords -->
+                <div class="metadata-field">
+                  <label>Keywords:</label>
+                  <div id="modalKeywordsContainer" class="keywords-container"></div>
+                  <div class="keyword-input-group">
+                    <input type="text" id="modalNewKeywordInput" class="metadata-input" placeholder="Add new keyword">
+                    <button id="addModalKeywordBtn" class="setting-btn">+ Add</button>
+                  </div>
+                </div>
+                
+                <!-- Category & Scene Type -->
+                <div class="metadata-row">
+                  <div class="metadata-field">
+                    <label for="modalMetaCategory">Category:</label>
+                    <input type="text" id="modalMetaCategory" class="metadata-input" placeholder="e.g., Aviation">
+                  </div>
+                  <div class="metadata-field">
+                    <label for="modalMetaSceneType">Scene Type:</label>
+                    <input type="text" id="modalMetaSceneType" class="metadata-input" placeholder="e.g., Landscape">
+                  </div>
+                </div>
+                
+                <!-- Mood -->
+                <div class="metadata-field">
+                  <label for="modalMetaMood">Mood:</label>
+                  <input type="text" id="modalMetaMood" class="metadata-input" placeholder="e.g., Dynamic">
+                </div>
+                
+                <!-- Location -->
+                <div class="metadata-field">
+                  <label>Location:</label>
+                  <div class="location-grid">
+                    <input type="text" id="modalMetaCity" class="metadata-input" placeholder="City">
+                    <input type="text" id="modalMetaState" class="metadata-input" placeholder="State">
+                    <input type="text" id="modalMetaCountry" class="metadata-input" placeholder="Country">
+                    <input type="text" id="modalMetaSpecificLocation" class="metadata-input" placeholder="Specific Location">
+                  </div>
+                </div>
+                
+                <!-- Hashtags -->
+                <div class="metadata-field">
+                  <label for="modalMetaHashtags">Hashtags:</label>
+                  <textarea id="modalMetaHashtags" class="metadata-textarea" rows="2" placeholder="#hashtag1 #hashtag2"></textarea>
+                </div>
+                
+              </div>
+            </div>
+            
+            <!-- Modal Footer -->
+            <div class="modal-footer">
+<button id="editModalCancelBtn" class="secondary-button">Cancel</button>
+<button id="editModalSaveBtn" class="select-btn">Save</button>
+            </div>
+          </div>
+        </div>
+        
+      </div>
+
+      <!-- Personal Data Tab -->
+      <div id="personal-data-tab" class="tab-panel">
+        <h2>📋 Creator & Copyright Information</h2>
+        <p style="color: #6c757d; margin-bottom: 30px;">
+          This information will be embedded into all XMP files for copyright and attribution.
+        </p>
+
+        <div class="settings-section">
+          <!-- Creator Information -->
+          <div class="settings-group">
+            <h3>👤 Creator Information</h3>
+            
+            <div class="setting-item">
+              <label for="creatorName">Creator Name *</label>
+              <input type="text" id="creatorName" class="metadata-input" placeholder="e.g., Philip Ethan Grossman">
+              <span class="field-hint">Your full name as photographer/creator</span>
+            </div>
+
+            <div class="setting-item">
+              <label for="creatorJobTitle">Job Title</label>
+              <input type="text" id="creatorJobTitle" class="metadata-input" placeholder="e.g., Professional Photographer">
+              <span class="field-hint">Optional: Your professional title</span>
+            </div>
+          </div>
+
+          <!-- Contact Information -->
+          <div class="settings-group">
+            <h3>📞 Contact Information</h3>
+            
+            <div class="setting-item">
+              <label for="creatorAddress">Address</label>
+              <input type="text" id="creatorAddress" class="metadata-input" placeholder="Street address">
+            </div>
+
+            <div class="metadata-row">
+              <div class="metadata-field">
+                <label for="creatorCity">City</label>
+                <input type="text" id="creatorCity" class="metadata-input" placeholder="City">
+              </div>
+              <div class="metadata-field">
+                <label for="creatorState">State/Province</label>
+                <input type="text" id="creatorState" class="metadata-input" placeholder="State">
+              </div>
+            </div>
+
+            <div class="metadata-row">
+              <div class="metadata-field">
+                <label for="creatorPostalCode">Postal Code</label>
+                <input type="text" id="creatorPostalCode" class="metadata-input" placeholder="ZIP/Postal">
+              </div>
+              <div class="metadata-field">
+                <label for="creatorCountry">Country</label>
+                <input type="text" id="creatorCountry" class="metadata-input" placeholder="Country">
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <label for="creatorPhone">Phone</label>
+              <input type="tel" id="creatorPhone" class="metadata-input" placeholder="+1-555-123-4567">
+            </div>
+
+            <div class="setting-item">
+              <label for="creatorEmail">E-Mail *</label>
+              <input type="email" id="creatorEmail" class="metadata-input" placeholder="your@email.com">
+              <span class="field-hint">Primary contact email</span>
+            </div>
+
+            <div class="setting-item">
+              <label for="creatorWebsite">Website</label>
+              <input type="url" id="creatorWebsite" class="metadata-input" placeholder="https://yourwebsite.com">
+            </div>
+          </div>
+
+          <!-- Copyright Information -->
+          <div class="settings-group">
+            <h3>© Copyright Information</h3>
+            
+            <div class="setting-item">
+              <label for="copyrightStatus">Copyright Status</label>
+              <select id="copyrightStatus" class="metadata-input">
+                <option value="unknown">Unknown</option>
+                <option value="copyrighted" selected>Copyrighted</option>
+                <option value="public-domain">Public Domain</option>
+              </select>
+            </div>
+
+            <div class="setting-item">
+              <label for="copyrightNotice">Copyright Notice *</label>
+              <input type="text" id="copyrightNotice" class="metadata-input" 
+                     placeholder="© 2025 Your Name. All Rights Reserved."
+                     value="© 2025 Philip Ethan Grossman. All Rights Reserved.">
+              <span class="field-hint">Standard copyright notice embedded in all files</span>
+            </div>
+
+            <div class="setting-item">
+              <label for="rightsUsageTerms">Rights Usage Terms</label>
+              <textarea id="rightsUsageTerms" class="metadata-input" rows="4" 
+                        placeholder="Describe usage rights, licensing terms, or restrictions..."></textarea>
+              <span class="field-hint">Optional: Detailed licensing or usage terms</span>
+            </div>
+          </div>
+
+          <!-- Save Button -->
+          <div style="text-align: center; margin-top: 40px;">
+            <button id="savePersonalDataBtn" class="select-btn" style="padding: 14px 32px; font-size: 16px;">
+              💾 Save Personal Data
+            </button>
+            <p style="font-size: 12px; color: #6c757d; margin-top: 10px;">
+              This information will be used for all future XMP file generation
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Settings Tab -->
+      <div id="settings-tab" class="tab-panel">
+        <h2>Settings</h2>
+        
+        <div class="settings-content">
+          
+          <!-- Database Settings Section -->
+          <div class="settings-section">
+            <h3>Database Settings</h3>
+            
+            <div class="setting-item">
+              <label for="dbPath">Database Location:</label>
+              <div class="setting-input-group">
+                <input 
+                  type="text" 
+                  id="dbPath" 
+                  class="setting-input" 
+                  readonly 
+                  placeholder="No database configured"
+                >
+                <button id="selectDbBtn" class="setting-btn">Select</button>
+              </div>
+              <p class="setting-hint">Choose where to store the application database</p>
+            </div>
+            
+            <div class="setting-item">
+              <label>Database Statistics:</label>
+              <div id="dbStats" class="db-stats">
+                <div class="stat-item">
+                  <span class="stat-label">Images:</span>
+                  <span class="stat-value" id="statImages">—</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Derivatives:</span>
+                  <span class="stat-value" id="statDerivatives">—</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Clusters:</span>
+                  <span class="stat-value" id="statClusters">—</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Analyzed:</span>
+                  <span class="stat-value" id="statAnalyzed">—</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Database Size:</span>
+                  <span class="stat-value" id="statFileSize">—</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="setting-item">
+              <button id="clearDbBtn" class="danger-btn">
+                ⚠️ Clear Database (Testing Only)
+              </button>
+              <p class="setting-hint warning-text">
+                This will delete all records from the database. This cannot be undone!
+              </p>
+            </div>
+          </div>
+          
+          <!-- Processing Settings Section -->
+          <div class="settings-section">
+            <h3>Processing Settings</h3>
+            
+            <div class="setting-item">
+              <label for="timestampThreshold">Bracketing Time Threshold (seconds):</label>
+              <div class="setting-input-group">
+                <input 
+                  type="number" 
+                  id="timestampThreshold" 
+                  class="setting-input-small" 
+                  min="1" 
+                  max="30" 
+                  value="5"
+                >
+                <span class="setting-unit">seconds</span>
+              </div>
+              <p class="setting-hint">
+                Photos taken within this time window will be grouped as bracketed shots
+              </p>
+            </div>
+          </div>
+          
+          <!-- AI Analysis Settings Section -->
+          <div class="settings-section">
+            <h3>AI Analysis Settings</h3>
+            
+
+            
+            <!-- Google Vision API Configuration -->
+            <div class="setting-item">
+              <label for="googleVisionApiKey">Google Vision API Key (Optional Fallback):</label>
+              <div class="setting-input-group">
+                <input 
+                  type="password" 
+                  id="googleVisionApiKey" 
+                  class="setting-input" 
+                  placeholder="Enter your Google Cloud Vision API key"
+                >
+                <button id="testGoogleVisionBtn" class="setting-btn">Test Connection</button>
+                <button id="toggleApiKeyVisibility" class="setting-btn" type="button">👁️</button>
+              </div>
+              <div class="setting-item" style="margin-top:12px;">
+                <label>Enabled Google AI Studio Models:</label>
+                <div id="aiStudioModelsContainer" style="margin-top: 8px; max-height: 150px; overflow-y: auto; border: 1px solid #ced4da; border-radius: 6px; padding: 10px; background: #fff;">
+                  <span style="color:#6c757d; font-size:13px;">(click Test Connection to load models)</span>
+                </div>
+                <p class="setting-hint">Check the models you want available in the main process dropdown.</p>
+              </div>
+              <div class="setting-input-group" style="margin-top: 15px;">
+                <label for="geminiTemperature">Gemini Temperature:</label>
+                <input 
+                  type="number" 
+                  id="geminiTemperature" 
+                  class="setting-input-small" 
+                  min="0" 
+                  max="2" 
+                  step="0.1"
+                  value="0.3"
+                  style="width: 100px;"
+                >
+                <span class="setting-unit">(0.0 - 2.0)</span>
+              </div>
+              <p class="setting-hint">
+                Controls randomness in responses. Lower values (0.1-0.3) = more focused/factual. Higher values (0.7-1.0) = more creative. Default: 0.3
+              </p>
+              <p class="setting-hint">
+                Used as fallback when Ollama confidence is low. Get your API key at: 
+                <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color: #3498db;">
+                  Google Cloud Console
+                </a>
+              </p>
+              <div id="googleVisionStatus" style="margin-top: 8px; display: none;"></div>
+            </div>
+            
+            <!-- Save Button -->
+            <div class="setting-item">
+              <button id="saveAISettingsBtn" class="select-btn">
+                Save AI Settings
+              </button>
+            </div>
+          </div>
+          
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Image Preview Modal -->
+  <div id="imagePreviewModal" class="modal" style="display: none;">
+    <div class="modal-backdrop" id="modalBackdrop"></div>
+    <div class="modal-content">
+      <button class="modal-close" id="modalCloseBtn">✕</button>
+      <img id="previewImage" src="" alt="Preview" style="max-width: 500px; max-height: 500px;">
+      <div class="preview-info">
+        <p id="previewFilename"></p>
+        <p id="previewSimilarity"></p>
+        <!-- ✅ ADD THIS NEW BUTTON -->
+        <button id="makeParentImageBtn" class="make-parent-btn" style="display: none;">
+          Make Parent Image
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Prompt Editor Modal -->
+  <div id="promptEditorModal" class="modal" style="display: none;">
+    <div class="modal-backdrop" id="promptModalBackdrop"></div>
+    <div class="modal-content prompt-editor-modal">
+      <div class="modal-header">
+        <h3 id="promptEditorTitle">Edit AI Prompt</h3>
+        <button class="modal-close" id="promptModalCloseBtn">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="prompt-editor-info">
+          <p><strong>Image:</strong> <span id="promptEditorFilename"></span></p>
+          <p class="prompt-editor-instructions">
+            Customize the prompt that will be sent to the AI for analyzing this image. 
+            The AI will use this prompt to generate metadata for the image.
+          </p>
+        </div>
+        <div class="prompt-editor-textarea-container">
+          <textarea 
+            id="promptEditorTextarea" 
+            placeholder="Enter your custom prompt here..."
+            rows="12"
+          ></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="promptEditorCancelBtn" class="secondary-button">Cancel</button>
+        <button id="promptEditorSaveBtn" class="primary-button">Save Prompt</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CLIP Service Setup Progress Modal -->
+  <div id="clipSetupModal" class="modal-overlay" style="display: none;">
+    <div class="modal-content" style="max-width: 600px; width: 90%;">
+      <div class="modal-header" style="margin-bottom: 20px;">
+        <h2 style="margin: 0; font-size: 24px; color: #2c3e50;">🚀 Setting Up CLIP Service</h2>
+        <p style="margin: 8px 0 0 0; font-size: 14px; color: #6c757d;">First-time setup in progress...</p>
+      </div>
+      
+      <div class="modal-body">
+        <!-- Progress Bar -->
+        <div style="margin-bottom: 30px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span id="setupStage" style="font-weight: 500; color: #2c3e50;">Initializing...</span>
+            <span id="setupPercent" style="font-weight: 600; color: #3498db;">0%</span>
+          </div>
+          <div style="width: 100%; height: 28px; background-color: #e9ecef; border-radius: 14px; overflow: hidden;">
+            <div id="setupProgressFill" style="height: 100%; background: linear-gradient(90deg, #3498db 0%, #2ecc71 100%); width: 0%; transition: width 0.5s ease;"></div>
+          </div>
+        </div>
+        
+        <!-- Status Message -->
+        <div id="setupStatusMessage" style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 8px; min-height: 60px;">
+          <p style="margin: 0; font-size: 14px; color: #495057; line-height: 1.6;">Preparing CLIP service...</p>
+        </div>
+        
+        <!-- Time Estimate -->
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px; background-color: #e3f2fd; border-radius: 8px; margin-bottom: 20px;">
+          <div>
+            <div style="font-size: 12px; color: #6c757d; margin-bottom: 4px;">Elapsed Time</div>
+            <div id="setupElapsed" style="font-size: 18px; font-weight: 600; color: #1976d2;">0:00</div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 12px; color: #6c757d; margin-bottom: 4px;">Estimated Remaining</div>
+            <div id="setupRemaining" style="font-size: 18px; font-weight: 600; color: #1976d2;">Calculating...</div>
+          </div>
+        </div>
+        
+        <!-- Detailed Progress Steps -->
+        <div id="setupSteps" style="margin-top: 20px;">
+          <div class="setup-step" data-step="venv">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+              <span class="step-icon" style="font-size: 20px;">⏳</span>
+              <span class="step-text" style="font-weight: 500; color: #495057;">Creating Python virtual environment...</span>
+            </div>
+          </div>
+          <div class="setup-step" data-step="deps">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+              <span class="step-icon" style="font-size: 20px;">⏳</span>
+              <span class="step-text" style="font-weight: 500; color: #495057;">Installing dependencies...</span>
+            </div>
+          </div>
+          <div class="setup-step" data-step="model">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+              <span class="step-icon" style="font-size: 20px;">⏳</span>
+              <span class="step-text" style="font-weight: 500; color: #495057;">Downloading CLIP model (~890MB)...</span>
+            </div>
+          </div>
+          <div class="setup-step" data-step="start">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span class="step-icon" style="font-size: 20px;">⏳</span>
+              <span class="step-text" style="font-weight: 500; color: #495057;">Starting CLIP service...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="modal-footer" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #dee2e6;">
+        <p style="margin: 0; font-size: 12px; color: #6c757d; text-align: center;">
+          This is a one-time setup. Future launches will be much faster.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Merge Cluster Modal -->
+  <div id="mergeClusterModal" class="modal-overlay" style="display: none;">
+    <div class="modal-backdrop" id="mergeClusterBackdrop" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); z-index: 9999;"></div>
+    <div class="modal-content" style="max-width: 1200px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; position: relative; z-index: 10000;">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #dee2e6;">
+        <h2 style="margin: 0; font-size: 22px; color: #2c3e50;">Merge Cluster</h2>
+        <button id="mergeClusterUpdateBtn" class="primary-button" style="padding: 10px 24px; font-size: 16px; font-weight: 600;">
+          Update
+        </button>
+        <button class="modal-close-btn" id="mergeClusterCloseBtn" style="background: none; border: none; font-size: 28px; cursor: pointer; color: #6c757d; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">×</button>
+      </div>
+      
+      <div style="display: flex; gap: 30px; flex: 1; overflow: hidden;">
+        <!-- Left side: Selected parent image (2x thumbnail size) -->
+        <div style="flex: 0 0 300px; display: flex; flex-direction: column; align-items: center;">
+          <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #495057;">Source Parent Image</h3>
+          <img id="mergeSourceImage" src="" alt="Source" style="max-width: 300px; max-height: 300px; border: 2px solid #3498db; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+          <p id="mergeSourceFilename" style="margin: 15px 0 0 0; font-size: 14px; color: #495057; text-align: center; word-break: break-word;"></p>
+          <div id="mergeSourceInfo" style="margin-top: 10px; font-size: 12px; color: #6c757d; text-align: center;"></div>
+        </div>
+        
+        <!-- Right side: Scrollable table of all other parent images -->
+        <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+          <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #495057;">Select Target Parent Image to Merge Into</h3>
+          <div id="mergeTargetImagesContainer" style="flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+            <!-- Target images will be populated here -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

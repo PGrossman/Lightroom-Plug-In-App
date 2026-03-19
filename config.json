@@ -1,0 +1,57 @@
+{
+  "version": "1.0.0",
+  "ollama": {
+    "endpoint": "http://localhost:11434",
+    "model": "qwen2.5vl:latest",
+    "temperature": 0.1,
+    "confidenceThreshold": 0.95,
+    "timeout": 60000
+  },
+  "googleVision": {
+    "enabled": false,
+    "apiKey": "",
+    "credentialsPath": "",
+    "autoFallback": true,
+    "features": ["LABEL_DETECTION", "OBJECT_LOCALIZATION", "IMAGE_PROPERTIES"]
+  },
+  "aiAnalysis": {
+    "provider": "ollama",
+    "confidenceThreshold": 85,
+    "requireConfidenceScore": true,
+    "allowManualOverride": true,
+    "promptStrategy": "balanced"
+  },
+  "chernobylDB": {
+    "path": ""
+  },
+  "processing": {
+    "batchSize": 10,
+    "parallelWorkers": 4,
+    "jpgQuality": 90,
+    "maxImageSize": 2048,
+    "useEmbeddedPreview": true
+  },
+  "similarity": {
+    "enabled": true,
+    "hammingThreshold": 80,
+    "hashSize": 16,
+    "autoDetect": true,
+    "showInResults": true,
+    "autoMergeThreshold": 98
+  },
+  "xmp": {
+    "applyToDerivatives": true,
+    "includeAnalysisDate": true,
+    "includeAISource": true
+  },
+  "paths": {
+    "tempDirectory": "./temp",
+    "logDirectory": "./z_Logs and traces"
+  },
+  "logging": {
+    "level": "info",
+    "maxFiles": 10,
+    "maxSize": "10m"
+  }
+}
+

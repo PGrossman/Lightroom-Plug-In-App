@@ -1,0 +1,9 @@
+# Services directory - will contain:
+# - fileManager.js
+# - imageProcessor.js
+# - similarityDetector.js
+# - ollamaService.js
+# - googleVisionService.js
+# - xmpGenerator.js
+# - processingCoordinator.js
+
