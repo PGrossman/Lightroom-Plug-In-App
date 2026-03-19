@@ -84,7 +84,14 @@ window.addEventListener('DOMContentLoaded', () => {
         
         scanResults = response.results;
         window.scanResults = scanResults;
-        window.selectedDirectory = null; // No single directory in files-only mode
+        
+        // Set a valid selectedDirectory for downstream processing (common parent)
+        try {
+          const parent = await window.electronAPI.getParentDir(paths[0]);
+          window.selectedDirectory = parent;
+        } catch {
+          window.selectedDirectory = "Lightroom_Job";
+        }
         
         updateStatus('Lightroom images loaded and clustered!', 'ready');
         displayScanResults(response.summary);
@@ -558,8 +565,8 @@ async function processImages() {
     console.log('Process Images clicked!');
     
     // Validate that we have scan results
-    if (!window.scanResults || !window.selectedDirectory) {
-      alert('Please scan a directory first before processing images.');
+    if (!window.scanResults || (!window.selectedDirectory && !window.lightroomMode)) {
+      alert('Please scan a directory or load files before processing images.');
       return;
     }
 
