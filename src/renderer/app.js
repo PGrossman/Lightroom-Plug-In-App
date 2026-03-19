@@ -4892,29 +4892,33 @@ async function handleGenerateAllXMP() {
     for (let i = 0; i < allClustersForAnalysis.length; i++) {
       if (!analyzedClusters.has(i)) continue;
       
-      const cluster = allClustersForAnalysis[i];
+      const group = allClustersForAnalysis[i];
       const metadata = analyzedClusters.get(i);
       
       // Map metadata to every single file path in this super cluster
       const allPathsInSuperCluster = new Set();
       
-      // 1. Parent images (mainRep and similarReps)
-      if (cluster.mainRep?.representativePath) allPathsInSuperCluster.add(cluster.mainRep.representativePath);
-      if (cluster.similarReps) {
-        cluster.similarReps.forEach(rep => {
-          if (rep.representativePath) allPathsInSuperCluster.add(rep.representativePath);
+      // 1. Add Main Rep and its bracketed images
+      if (group.mainRep?.representativePath) allPathsInSuperCluster.add(group.mainRep.representativePath);
+      if (group.mainRep?.imagePaths) {
+        group.mainRep.imagePaths.forEach(p => allPathsInSuperCluster.add(p));
+      }
+
+      // 2. Add Similar Reps and their bracketed images
+      if (group.similarReps) {
+        group.similarReps.forEach(sim => {
+          if (sim.cluster?.representativePath) allPathsInSuperCluster.add(sim.cluster.representativePath);
+          if (sim.cluster?.imagePaths) {
+            sim.cluster.imagePaths.forEach(p => allPathsInSuperCluster.add(p));
+          }
         });
       }
       
-      // 2. Child images (imagePaths in the clusters)
-      if (cluster.imagePaths) cluster.imagePaths.forEach(p => allPathsInSuperCluster.add(p));
-      if (cluster.derivatives) cluster.derivatives.forEach(p => allPathsInSuperCluster.add(p));
-      
-      // 3. Processed images (if any)
-      if (cluster.processedImages) {
-        cluster.processedImages.forEach(img => {
-          if (img.path) allPathsInSuperCluster.add(img.path);
-        });
+      // 3. Add all derivatives
+      if (group.derivatives) {
+        group.derivatives.forEach(p => allPathsInSuperCluster.add(p));
+      } else if (group.mainRep?.derivatives) {
+        group.mainRep.derivatives.forEach(p => allPathsInSuperCluster.add(p));
       }
 
       // Add each file to the response with its metadata

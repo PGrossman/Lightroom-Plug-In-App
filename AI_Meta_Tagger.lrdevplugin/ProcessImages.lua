@@ -100,20 +100,24 @@ local function main()
                                     -- FIX: Actually create and apply the keywords!
                                     if item.keywords and type(item.keywords) == "table" then
                                         for _, kwStr in ipairs(item.keywords) do
-                                            -- createKeyword(name, synonyms, includeOnExport, parent, returnExisting)
-                                            local kwObj = catalog:createKeyword(kwStr, {}, true, nil, true)
-                                            p:addKeyword(kwObj)
+                                            if type(kwStr) == "string" and kwStr ~= "" then
+                                                local kwObj = catalog:createKeyword(kwStr, {}, true, nil, true)
+                                                p:addKeyword(kwObj)
+                                            end
                                         end
                                     end
                                     
-                                    if item.title then p:setRawMetadata('title', item.title) end
-                                    if item.caption then p:setRawMetadata('caption', item.caption) end
+                                    if type(item.title) == "string" and item.title ~= "" then 
+                                        p:setRawMetadata('title', item.title) 
+                                    end
+                                    if type(item.caption) == "string" and item.caption ~= "" then 
+                                        p:setRawMetadata('caption', item.caption) 
+                                    end
                                     
-                                    -- FIX: Correct SDK method for writing GPS
-                                    if item.gpsLatitude and item.gpsLongitude then
+                                    if type(item.gpsLatitude) == "number" and type(item.gpsLongitude) == "number" then
                                         p:setRawMetadata('gps', { 
-                                            latitude = tonumber(item.gpsLatitude), 
-                                            longitude = tonumber(item.gpsLongitude) 
+                                            latitude = item.gpsLatitude, 
+                                            longitude = item.gpsLongitude 
                                         })
                                     end
                                     
