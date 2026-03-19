@@ -6,7 +6,14 @@ return {
 	LrPluginName = 'AI Meta Tagger',
 	LrToolkitIdentifier = 'com.adobe.lightroom.sdk',
 
-	LrPluginMenuHandlers = {
+	LrExportMenuItems = {
+		{
+			title = "Process Selected Photos with AI",
+			file = "ProcessImages.lua",
+		},
+	},
+
+	LrLibraryMenuItems = {
 		{
 			title = "Process Selected Photos with AI",
 			file = "ProcessImages.lua",
