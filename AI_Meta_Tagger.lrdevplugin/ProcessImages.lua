@@ -16,7 +16,7 @@ local function main()
     end
 
     -- Create temp directory in Documents
-    local documentsPath = LrPathUtils.getStandardFolder('Documents')
+    local documentsPath = LrPathUtils.getStandardFilePath('documents')
     local tempPath = LrPathUtils.child(documentsPath, 'LR_AI_Temp')
     if not LrFileUtils.exists(tempPath) then
         LrFileUtils.createAllDirectories(tempPath)
@@ -33,12 +33,9 @@ local function main()
     local requestData = { images = {} }
     for _, photo in ipairs(photos) do
         local path = photo:getRawMetadata('path')
-        local gps = photo:getRawMetadata('gps')
-        local lat, lon = nil, nil
-        if gps and type(gps) == 'table' then
-            lat = gps.latitude
-            lon = gps.longitude
-        end
+        local lat = photo:getRawMetadata('gpsLatitude')
+        local lon = photo:getRawMetadata('gpsLongitude')
+        
         table.insert(requestData.images, {
             path = path,
             gpsLatitude = lat,
@@ -104,9 +101,8 @@ local function main()
                                     end
                                     if item.title then p:setRawMetadata('title', item.title) end
                                     if item.caption then p:setRawMetadata('caption', item.caption) end
-                                    if item.gpsLatitude and item.gpsLongitude then
-                                        p:setRawMetadata('gps', { latitude = item.gpsLatitude, longitude = item.gpsLongitude })
-                                    end
+                                    if item.gpsLatitude then p:setRawMetadata('gpsLatitude', tonumber(item.gpsLatitude)) end
+                                    if item.gpsLongitude then p:setRawMetadata('gpsLongitude', tonumber(item.gpsLongitude)) end
                                     break
                                 end
                             end
