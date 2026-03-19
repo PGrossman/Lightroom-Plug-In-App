@@ -60,9 +60,13 @@ local function main()
 
     -- Launch Electron App
     local projectPath = LrPathUtils.parent(_PLUGIN.path)
-    -- Source the zsh profile to ensure Node/npm are in the PATH
-    local shellCommand = string.format('/bin/zsh -i -c "cd %q && npm start &"', projectPath)
-    LrTasks.execute(shellCommand)
+    
+    -- Force macOS to include standard Node/npm installation paths
+    -- Use %s with single quotes to safely handle folder paths with spaces
+    local shellCommand = string.format('export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" && cd \'%s\' && npm start &', projectPath)
+    
+    -- Use os.execute instead of LrTasks for reliable detached background execution
+    os.execute(shellCommand)
 
     -- Start polling loop
     LrTasks.startAsyncTask(function()
