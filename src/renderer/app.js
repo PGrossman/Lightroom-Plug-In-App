@@ -23,8 +23,6 @@ let currentEditingCluster = null; // Currently editing cluster in modal
 let currentEditingGroupIndex = null; // Currently editing group index
 
 // UI Elements - Will be initialized after DOM loads
-let selectDirBtn;
-let dropzone;
 let resultsTable;
 let resultsTableBody;
 let processImagesBtn;
@@ -40,8 +38,6 @@ window.addEventListener('DOMContentLoaded', () => {
   console.log('DOM Content Loaded - Now initializing elements...');
   
   // Get all DOM elements
-  selectDirBtn = document.getElementById('selectDirBtn');
-  dropzone = document.getElementById('dropzone');
   resultsTable = document.getElementById('resultsTable');
   resultsTableBody = document.getElementById('resultsTableBody');
   processImagesBtn = document.getElementById('processImagesBtn');
@@ -190,107 +186,6 @@ function initializeEventListeners() {
     });
   });
 
-  // Select directory button
-  if (selectDirBtn) {
-    console.log('DEBUG: Adding click listener to selectDirBtn');
-    selectDirBtn.addEventListener('click', async () => {
-      console.log('==== BUTTON CLICKED ====');
-      try {
-        await selectAndScanDirectory();
-      } catch (error) {
-        console.error('ERROR in button click handler:', error);
-      }
-    });
-    console.log('✅ Select button listener attached');
-  } else {
-    console.error('CRITICAL ERROR: selectDirBtn is NULL after DOM load!');
-  }
-
-  // Dropzone event listeners
-  if (dropzone) {
-    dropzone.addEventListener('dragenter', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-    });
-    
-    dropzone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      dropzone.classList.add('dragover');
-      dropzone.style.backgroundColor = '#e3f2fd';
-      dropzone.style.borderColor = '#3498db';
-    });
-    
-    dropzone.addEventListener('dragleave', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      dropzone.classList.remove('dragover');
-      dropzone.style.backgroundColor = '#f8f9fa';
-      dropzone.style.borderColor = '#cbd5e0';
-    });
-
-    dropzone.addEventListener('drop', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      dropzone.classList.remove('dragover');
-      dropzone.style.backgroundColor = '#d4edda';
-      dropzone.style.borderColor = '#28a745';
-      
-      const fileList = Array.from(e.dataTransfer.files || []);
-      if (fileList.length === 0) return;
-
-      const paths = fileList.map(f => f.path).filter(Boolean);
-      const isDirFlags = await Promise.all(paths.map(p => window.electronAPI.isDirectory(p)));
-      const anyDir = isDirFlags.some(Boolean);
-
-      if (anyDir) {
-        // If any directory present, prefer directory scan on first directory
-        const firstDir = paths[isDirFlags.findIndex(Boolean)];
-        console.log('Directory dropped:', firstDir);
-        await selectAndScanDirectory(firstDir);
-      } else {
-        // Files-only: scan exactly these files
-        console.log('Files dropped:', paths.length, 'files');
-        const response = await window.electronAPI.scanFilesWithClustering(paths, 5);
-        if (!response.success) {
-          alert('Failed to process files: ' + response.error);
-          return;
-        }
-
-        scanResults = response.results;
-        const summary = response.summary;
-        window.scanResults = scanResults;
-        // Set a reasonable selectedDirectory for downstream processing (common parent)
-        try {
-          const parent = await window.electronAPI.getParentDir(paths[0]);
-          window.selectedDirectory = parent;
-        } catch {
-          window.selectedDirectory = null;
-        }
-
-        // Update UI similarly to directory flow
-        updateStatus('Files added successfully', 'complete');
-        displayScanResults(summary);
-        populateResultsTableWithClusters(scanResults);
-        console.log('Files-only scan results:', scanResults);
-
-        // Enable the process button
-        if (processImagesBtn) {
-          processImagesBtn.disabled = false;
-        }
-      }
-    });
-
-    dropzone.addEventListener('click', async (e) => {
-      if (e.target.id !== 'selectDirBtn') {
-        await selectAndScanDirectory();
-      }
-    });
-    
-    console.log('✅ Dropzone listeners attached');
-  } else {
-    console.error('CRITICAL ERROR: dropzone is NULL after DOM load!');
-  }
   
   // Process Images button
   if (processImagesBtn) {
@@ -421,86 +316,6 @@ function initializeEventListeners() {
   console.log('✅ All event listeners initialized successfully!');
 }
 
-// ============================================
-// Main Scan Function
-// ============================================
-async function selectAndScanDirectory(dirPath = null) {
-  console.log('==== selectAndScanDirectory CALLED ====');
-  
-  try {
-    // If dirPath is provided (from drag & drop), use it directly
-    if (dirPath) {
-      console.log('Using provided directory path:', dirPath);
-      selectedDirectory = dirPath;
-    } else {
-      // Otherwise, show directory selection dialog
-      console.log('Step 1: Calling selectDirectory...');
-      const result = await window.electronAPI.selectDirectory();
-      console.log('Step 2: Directory result:', result);
-      
-      if (result.canceled) {
-        console.log('Step 3: User canceled selection');
-        return;
-      }
-      
-      selectedDirectory = result.path;
-      console.log('Step 4: Selected directory:', selectedDirectory);
-    }
-    
-    // Update status
-    console.log('Step 5: Updating UI status...');
-    updateStatus('Scanning directory and analyzing timestamps...', 'scanning');
-    showProgress(10);
-    
-    console.log('Step 6: Starting scan with clustering...');
-    
-    // Perform scan WITH CLUSTERING (5 second threshold)
-    const response = await window.electronAPI.scanDirectoryWithClustering(
-      selectedDirectory,
-      5  // 5 second threshold for bracketed shots
-    );
-    
-    console.log('Step 7: Scan response received:', response);
-    
-    showProgress(100);
-    
-    if (!response.success) {
-      throw new Error(response.error);
-    }
-    
-    scanResults = response.results;
-    const summary = response.summary;
-    
-    // Store globally for processing
-    window.scanResults = scanResults;
-    window.selectedDirectory = selectedDirectory;
-    
-    console.log('Step 8: Scan results:', scanResults);
-    console.log('Step 9: Summary:', summary);
-    console.log('Step 9b: Stored globally:', { 
-      hasScanResults: !!window.scanResults, 
-      hasSelectedDir: !!window.selectedDirectory 
-    });
-    
-    // Update UI with results
-    displayScanResults(summary);
-    populateResultsTableWithClusters(scanResults);
-    
-    updateStatus('Scan complete with timestamp clustering!', 'ready');
-    
-    // Enable the process button
-    if (processImagesBtn) {
-      processImagesBtn.disabled = false;
-    }
-    
-    console.log('Step 10: UI updated successfully!');
-    
-  } catch (error) {
-    console.error('ERROR in selectAndScanDirectory:', error);
-    updateStatus(`Error: ${error.message}`, 'error');
-    showProgress(0);
-  }
-}
 
 // ============================================
 // Helper Functions

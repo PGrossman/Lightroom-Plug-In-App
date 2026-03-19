@@ -11,7 +11,6 @@ const DatabaseService = require('../services/databaseService');
 const ConfigManager = require('../services/configManager');
 const ExifExtractor = require('../services/exifExtractor');
 const ImageProcessor = require('../services/imageProcessor');
-const FolderKeywordParser = require('../services/folderKeywordParser');
 const ClusterRefiner = require('../services/clusterRefiner');
 const SimilarityDetector = require('../services/similarityDetector');
 const ClipServiceManager = require('../services/clipServiceManager');
@@ -26,7 +25,6 @@ const databaseService = new DatabaseService();
 const configManager = new ConfigManager();
 const exifExtractor = new ExifExtractor();
 const imageProcessor = new ImageProcessor();
-const folderKeywordParser = new FolderKeywordParser();
 const similarityDetector = new SimilarityDetector(configManager.getAllSettings());
 const clusterRefiner = new ClusterRefiner(imageProcessor);
 
@@ -409,30 +407,7 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
       }
     }
 
-    // Step 2: Extract folder keywords PER CLUSTER
-    event.sender.send('progress', { 
-      stage: 'keywords', 
-      message: 'Extracting folder keywords...',
-      percent: 30 
-    });
-
-    // Extract keywords for each cluster based on its representative's location
-    const clusterKeywords = new Map();
-    for (const cluster of scanResults.clusters) {
-      const representativePath = cluster.representative || cluster.representativePath;
-      const imageDir = path.dirname(representativePath);
-      
-      // Parse keywords from the image's directory (relative to base scan dir)
-      const keywords = folderKeywordParser.parseKeywordsRelative(imageDir, dirPath);
-      clusterKeywords.set(cluster.representative, keywords);
-      
-      logger.debug('Keywords for cluster', {
-        representative: path.basename(cluster.representative),
-        folder: path.basename(imageDir),
-        keywords: keywords.all
-      });
-    }
-    logger.info('Keywords extracted for all clusters', { totalClusters: clusterKeywords.size });
+    // Step 2: (DEPRECATED) Folder Keywords removed as per user request
 
     // ✅ CRITICAL DECISION POINT: Process differently based on skipClustering
     if (skipClustering) {
@@ -522,7 +497,7 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
             processedImages: processedImages, // ✅ Per-image processed data
             derivatives: derivatives,
             isBracketed: cluster.isBracketed,
-            keywords: clusterKeywords.get(cluster.representative)?.all || [],
+            keywords: [],
             timestamp: processedImages.find(img => img.isRepresentative)?.timestamp,
             gps: processedImages.find(img => img.isRepresentative)?.gps, // Representative GPS for compatibility
             processed: true,
@@ -550,9 +525,7 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
           clustersProcessed: bracketGroupResults.length,
           imagesProcessed: totalImagesProcessed,
           imagesFailed: 0,
-          keywords: Array.from(new Set(
-            Array.from(clusterKeywords.values()).flatMap(kw => kw.all)
-          )),
+          keywords: [],
           savedToDatabase: 0,
           similarPairs: 0
         },
@@ -655,14 +628,6 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
           success: result.success
         });
         
-        // Get keywords for this specific image's cluster
-        const imageCluster = scanResults.clusters.find(c => 
-          c.representative === imagePath || c.representativePath === imagePath
-        );
-        const imageKeywords = imageCluster ? 
-          (clusterKeywords.get(imageCluster.representative) || { all: [] }) : 
-          { all: [] };
-        
         imageResults.push({
           path: imagePath,
           success: result.success,
@@ -670,7 +635,7 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
           previewPath: result.previewPath,
           timestamp: metadata?.timestamp,
           gps: metadata?.gps,
-          keywords: imageKeywords.all,
+          keywords: [],
           error: result.error
         });
 
@@ -681,21 +646,13 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
           stack: error.stack
         });
         
-        // Get keywords for this specific image's cluster
-        const imageCluster = scanResults.clusters.find(c => 
-          c.representative === imagePath || c.representativePath === imagePath
-        );
-        const imageKeywords = imageCluster ? 
-          (clusterKeywords.get(imageCluster.representative) || { all: [] }) : 
-          { all: [] };
-        
         imageResults.push({
           path: imagePath,
           success: false,
           error: error.message,
           timestamp: metadata?.timestamp,
           gps: metadata?.gps,
-          keywords: imageKeywords.all
+          keywords: []
         });
       }
 
@@ -1186,7 +1143,7 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
     // Build cluster results for UI
     const processedClusters = scanResults.clusters.map(cluster => {
       const repResult = imageResults.find(r => r.path === cluster.representative);
-      const clusterKW = clusterKeywords.get(cluster.representative) || { all: [] };
+      const clusterKW = { all: [] };
       
       // ✅ FIX: Get derivatives from ALL images in the cluster, not just representative
       // Problem: Derivatives are keyed by base image, but representative can be any bracketed image
@@ -1230,11 +1187,7 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
       };
     });
 
-    // Collect all unique keywords from all clusters
-    const allKeywords = new Set();
-    clusterKeywords.forEach(kw => {
-      kw.all.forEach(keyword => allKeywords.add(keyword));
-    });
+    const allKeywords = [];
     
     return { 
       success: true,
@@ -1242,7 +1195,7 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
         clustersProcessed: representativesToProcess.length,
         imagesProcessed: imageResults.filter(r => r.success).length,
         imagesFailed: imageResults.filter(r => !r.success).length,
-        keywords: Array.from(allKeywords), // All unique keywords across all clusters
+        keywords: [], // All unique keywords across all clusters
         savedToDatabase: saveResult.saved || 0,
         similarPairs: similarityResults.length // NEW
       },
