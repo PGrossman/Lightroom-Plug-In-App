@@ -100,40 +100,42 @@ class AIAnalysisService {
     
     const keywordsStr = keywords.length > 0 ? keywords.join(', ') : '';
     
-    let prompt = `Analyze the provided photograph, named ${filename}.`;
+    let prompt = `You are an expert archivist cataloging a photograph named ${filename}.`;
     
     if (anchorContext && anchorContext.trim().length > 0) {
-      prompt += `\n\nUSER-PROVIDED CONTEXT FOR THIS IMAGE: "${anchorContext.trim()}"\nCRITICAL INSTRUCTION: You MUST treat this context as ABSOLUTE FACT. You are acting as an expert archivist and historian for this specific subject. Do not guess; state definitively that the image shows this subject. Use this context to identify specific machinery, architecture, or historical details. If there is visible text (e.g., signs, dials, Cyrillic), you MUST attempt to read and translate it contextually based on this location.\n\n`;
+      prompt += `\n\n*** CRITICAL OVERRIDE DIRECTIVE ***\nThe user has identified the exact subject of this photo as: "${anchorContext.trim()}"\n\nYou MUST treat this identification as absolute, indisputable fact. You are acting as an expert archivist and historian for this specific subject. Do not guess; state definitively that the image shows this subject. You must explicitly name this exact location/subject in your title, caption, and description. Do not merely describe a "rusty room" or "abandoned facility"—you must describe the specific historical and functional reality of "${anchorContext.trim()}".\n\n`;
     }
     
     if (keywordsStr) {
-      prompt += ` The image is already tagged with: ${keywordsStr}.`;
+      prompt += ` Current tags: ${keywordsStr}.`;
     }
     
     if (gps && gps.latitude && gps.longitude) {
-      prompt += ` The provided GPS coordinates are: Latitude: ${gps.latitude}, Longitude: ${gps.longitude}.`;
+      prompt += ` Verified GPS coordinates: ${gps.latitude}, ${gps.longitude}.`;
     }
     
-    prompt += `\n\nYour task is to generate detailed metadata for this image.`;
     prompt += `\n\nInstructions:`;
     
     if (anchorContext && anchorContext.trim().length > 0) {
-      prompt += `\n- Deep Contextual Analysis: Seamlessly and assertively integrate the Anchor Context. Name specific objects, translate visible text, and describe the historical/functional significance of what is in the frame.`;
+      prompt += `\n1. Anchor Context Domination: Your entire analysis must be framed around the user's provided context ("${anchorContext.trim()}"). If they named a specific reactor, control room, or building, you must name it explicitly in the title, caption, and the very first sentence of the description.`;
+      prompt += `\n2. Expert Translation: Contextually translate any visible text, Cyrillic labels, or dials based specifically on the machinery that would exist at "${anchorContext.trim()}".`;
+    } else {
+      prompt += `\n1. Visual Analysis: Examine the image for distinctive features, architecture, and overall mood.`;
     }
 
     if (gps && gps.latitude && gps.longitude) {
-      prompt += `\n- Prioritize Provided GPS: Use the provided GPS coordinates (${gps.latitude}, ${gps.longitude}) to accurately identify the specific location, region, and context to enrich your description.`;
+      prompt += `\n3. GPS Verification: Use the provided GPS (${gps.latitude}, ${gps.longitude}) purely to verify the region (e.g., Chernobyl Exclusion Zone) and enrich the historical context.`;
     } else {
-      prompt += `\n- Deduce GPS: No GPS coordinates were provided. If the Anchor Context names a specific real-world geographical location (e.g., "Chernobyl Reactor 4"), you MUST deduce its approximate GPS coordinates (latitude and longitude) and include them in the JSON response.`;
+      prompt += `\n3. Deduce GPS: If no GPS is provided, you MUST deduce the highly accurate latitude and longitude based on the user's provided context and include it in the JSON.`;
     }
     
-    prompt += `\n- Construct Metadata: Create a JSON object with the following fields:`;
-    prompt += `\n  - title: A specific and engaging title for the image.`;
-    prompt += `\n  - caption: A short, engaging 1-2 sentence summary.`;
-    prompt += `\n  - description: A thorough, definitive description of the scene, including translations of visible text and identification of specific elements.`;
-    prompt += `\n  - keywords: 7-15 highly relevant keywords.`;
+    prompt += `\n\nConstruct a JSON object with the following fields:`;
+    prompt += `\n  - title: An engaging title explicitly naming the subject.`;
+    prompt += `\n  - caption: A punchy 1-2 sentence summary explicitly naming the subject.`;
+    prompt += `\n  - description: A thorough, definitive description. Start by explicitly naming the subject. Include translations of visible text.`;
+    prompt += `\n  - keywords: 7-15 highly relevant keywords, prioritizing specific names from the context.`;
     prompt += `\n  - location: A detailed description of the identified location.`;
-    prompt += `\n  - gps: An object with 'latitude' and 'longitude' (number format). Provide this ONLY IF you can confidently deduce it from the Anchor Context or if it was provided to you, otherwise null.`;
+    prompt += `\n  - gps: An object with 'latitude' and 'longitude' (number format). Provide this ONLY IF deduced from context or provided to you.`;
     prompt += `\n  - technicalDetails: Observations on lighting or composition.`;
     prompt += `\n  - confidence: Your confidence level (0.0 to 1.0).`;
     prompt += `\n  - uncertainFields: An array listing any fields you are unsure about.`;
@@ -142,7 +144,7 @@ class AIAnalysisService {
       prompt += `\n\nThis image is part of a cluster of ${imageCount} related images.`;
     }
     
-    prompt += `\n\nOutput the result in the specified JSON format EXACTLY:`;
+    prompt += `\n\nOutput ONLY valid JSON in this exact format:`;
     prompt += `\n{`;
     prompt += `\n  "title": "Descriptive title here",`;
     prompt += `\n  "caption": "Short, punchy 1-2 sentence engaging summary",`;
