@@ -80,12 +80,6 @@ class AIAnalysisService {
     };
   }
 
-  /**
-   * Build LLM prompt with context and anchor context
-   * @param {Object} context - Context object with metadata
-   * @param {String} anchorContext - User-provided global context
-   * @returns {String} - Formatted prompt
-   */
   buildPrompt(context, anchorContext = null) {
     const filename = context.filename || 'Unknown';
     const keywords = context.existingKeywords || [];
@@ -97,7 +91,7 @@ class AIAnalysisService {
     let prompt = `Analyze the provided photograph, named ${filename}.`;
     
     if (anchorContext && anchorContext.trim().length > 0) {
-      prompt += `\n\nUSER-PROVIDED CONTEXT FOR THIS IMAGE BATCH:\n"${anchorContext.trim()}"\nUse this context heavily to inform your analysis, location identification, and event descriptions.\n\n`;
+      prompt += `\n\nUSER-PROVIDED CONTEXT FOR THIS IMAGE: "${anchorContext.trim()}"\nCRITICAL INSTRUCTION: You MUST treat this context as ABSOLUTE FACT. You are acting as an expert archivist and historian for this specific subject. Do not guess; state definitively that the image shows this subject. Use this context to identify specific machinery, architecture, or historical details. If there is visible text (e.g., signs, dials, Cyrillic), you MUST attempt to read and translate it contextually based on this location.\n\n`;
     }
     
     if (keywordsStr) {
@@ -108,41 +102,38 @@ class AIAnalysisService {
       prompt += ` The provided GPS coordinates are: Latitude: ${gps.latitude}, Longitude: ${gps.longitude}.`;
     }
     
-    prompt += `\n\nYour task is to generate detailed metadata for this image, specifically focusing on providing a comprehensive description, accurate keywords, and a compelling title.`;
+    prompt += `\n\nYour task is to generate detailed metadata for this image.`;
     prompt += `\n\nInstructions:`;
     
     if (anchorContext && anchorContext.trim().length > 0) {
-      prompt += `\n- Anchor Context Priority: Maximize use of the user-provided context above. If they named an event, place, or people, assume it applies to this image.`;
+      prompt += `\n- Deep Contextual Analysis: Seamlessly and assertively integrate the Anchor Context. Name specific objects, translate visible text, and describe the historical/functional significance of what is in the frame.`;
     }
 
     if (gps && gps.latitude && gps.longitude) {
       prompt += `\n- Prioritize Provided GPS: Use the provided GPS coordinates (${gps.latitude}, ${gps.longitude}) to determine the city, state, and country.`;
     } else {
-      prompt += `\n- Estimate Location: Attempt to estimate the location from visual clues only if you are highly confident. Otherwise set location fields to null.`;
+      prompt += `\n- Deduce GPS: If no GPS is provided, but the Anchor Context names a specific, real-world geographical location (e.g., "Chernobyl Reactor 4"), deduce and provide the highly accurate GPS coordinates for that exact location in the JSON response.`;
     }
     
-    prompt += `\n- Visual Analysis: Examine the image for distinctive features, architecture, landscape, and overall mood.`;
     prompt += `\n- Construct Metadata: Create a JSON object with the following fields:`;
     prompt += `\n  - title: A specific and engaging title for the image.`;
-    prompt += `\n  - caption: A short, engaging caption (1-2 sentences, suitable for social media or display).`;
-    prompt += `\n  - keywords: 7-15 relevant keywords and tags.`;
+    prompt += `\n  - caption: A short, engaging 1-2 sentence summary.`;
+    prompt += `\n  - description: A thorough, definitive description of the scene, including translations of visible text and identification of specific elements.`;
+    prompt += `\n  - keywords: 7-15 highly relevant keywords.`;
     prompt += `\n  - location: A detailed description of the identified location.`;
-    prompt += `\n  - description: A thorough description of the scene.`;
+    prompt += `\n  - gps: An object with 'latitude' and 'longitude' (number format). Provide this ONLY IF you can confidently deduce it from the Anchor Context, otherwise null.`;
     prompt += `\n  - technicalDetails: Observations on lighting or composition.`;
-    prompt += `\n  - confidence: Your confidence level (0.0 to 1.0) in the accuracy of the metadata.`;
+    prompt += `\n  - confidence: Your confidence level (0.0 to 1.0).`;
     prompt += `\n  - uncertainFields: An array listing any fields you are unsure about.`;
-    
-    if (imageCount > 1) {
-      prompt += `\n\nThis image is part of a cluster of ${imageCount} related images. Consider this context if it helps refine the identification.`;
-    }
     
     prompt += `\n\nOutput the result in the specified JSON format EXACTLY:`;
     prompt += `\n{`;
     prompt += `\n  "title": "Descriptive title here",`;
-    prompt += `\n  "caption": "Short, punchy engaging summary",`;
-    prompt += `\n  "description": "Detailed, literal description of what you see",`;
+    prompt += `\n  "caption": "Short, punchy 1-2 sentence engaging summary",`;
+    prompt += `\n  "description": "Detailed, definitive description of what you see, including translations.",`;
     prompt += `\n  "keywords": ["keyword1", "keyword2", "keyword3"],`;
     prompt += `\n  "location": "Location description or null",`;
+    prompt += `\n  "gps": {"latitude": 51.3895, "longitude": 30.0991},`;
     prompt += `\n  "technicalDetails": "Technical observations or null",`;
     prompt += `\n  "confidence": 0.95,`;
     prompt += `\n  "uncertainFields": []`;
