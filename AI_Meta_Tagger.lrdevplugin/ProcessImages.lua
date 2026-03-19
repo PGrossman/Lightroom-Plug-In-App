@@ -3,7 +3,8 @@ local LrTasks = import 'LrTasks'
 local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
 local LrDialogs = import 'LrDialogs'
-local LrJson = import 'LrJson'
+-- local LrJson = import 'LrJson' -- Removed due to SDK inconsistencies
+local JSON = dofile(LrPathUtils.child(_PLUGIN.path, "JSON.lua"))
 
 local function main()
     local catalog = LrApplication.activeCatalog()
@@ -46,7 +47,7 @@ local function main()
     end
 
     -- Write request.json
-    local jsonString = LrJson.encode(requestData)
+    local jsonString = JSON.encode(requestData)
     local f = io.open(requestFile, "w")
     if f then
         f:write(jsonString)
@@ -60,9 +61,8 @@ local function main()
     -- DETERMINING PROJECT PATH: The plugin is in [Project]/AI_Meta_Tagger.lrdevplugin
     local projectPath = LrPathUtils.parent(_PLUGIN.path)
     -- We'll try to run via npm start. 
-    -- Note: On macOS, we might need a full path to npm if it's not in the system path.
-    -- We use /usr/local/bin/npm as a common default, but we'll try just 'npm' first.
-    local shellCommand = string.format("cd %q && npm start &", projectPath)
+    -- MODIFIED: Source the zsh profile to ensure Node/npm are in the PATH
+    local shellCommand = string.format('/bin/zsh -i -c "cd %q && npm start &"', projectPath)
     LrTasks.execute(shellCommand)
 
     -- Start polling loop in a message dialog so we don't block the UI entirely but show progress
@@ -87,7 +87,7 @@ local function main()
             if resF then
                 local resJson = resF:read("*all")
                 resF:close()
-                local responseData = LrJson.decode(resJson)
+                local responseData = JSON.decode(resJson)
                 
                 if responseData and responseData.images then
                     -- Apply metadata with write access
