@@ -132,7 +132,11 @@ class AIAnalysisService {
     prompt += `\n\nConstruct a JSON object with the following fields:`;
     prompt += `\n  - title: An engaging title explicitly naming the subject.`;
     prompt += `\n  - caption: A punchy 1-2 sentence summary explicitly naming the subject.`;
-    prompt += `\n  - description: A thorough, definitive description. Start by explicitly naming the subject. Include translations of visible text.`;
+    if (anchorContext && anchorContext.trim().length > 0) {
+      prompt += `\n  - description: A rich, highly detailed 1-paragraph description. Write this EXACTLY as if you were responding to the prompt: "Give me a description of this photo, ${anchorContext.trim()}". Combine what you see visually with your deep historical knowledge of this subject.`;
+    } else {
+      prompt += `\n  - description: A thorough, definitive 1-paragraph description of what you see.`;
+    }
     prompt += `\n  - keywords: 7-15 highly relevant keywords, prioritizing specific names from the context.`;
     prompt += `\n  - location: A detailed description of the identified location.`;
     prompt += `\n  - gps: An object with 'latitude' and 'longitude' (number format). Provide this ONLY IF deduced from context or provided to you.`;
