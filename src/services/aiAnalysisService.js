@@ -110,9 +110,9 @@ class AIAnalysisService {
     }
 
     if (gps && gps.latitude && gps.longitude) {
-      prompt += `\n- Prioritize Provided GPS: Use the provided GPS coordinates (${gps.latitude}, ${gps.longitude}) to determine the city, state, and country.`;
+      prompt += `\n- Prioritize Provided GPS: Use the provided GPS coordinates (${gps.latitude}, ${gps.longitude}) to accurately identify the specific location, region, and context to enrich your description.`;
     } else {
-      prompt += `\n- Deduce GPS: If no GPS is provided, but the Anchor Context names a specific, real-world geographical location (e.g., "Chernobyl Reactor 4"), deduce and provide the highly accurate GPS coordinates for that exact location in the JSON response.`;
+      prompt += `\n- Deduce GPS: No GPS coordinates were provided. If the Anchor Context names a specific real-world geographical location (e.g., "Chernobyl Reactor 4"), you MUST deduce its approximate GPS coordinates (latitude and longitude) and include them in the JSON response.`;
     }
     
     prompt += `\n- Construct Metadata: Create a JSON object with the following fields:`;
@@ -121,10 +121,14 @@ class AIAnalysisService {
     prompt += `\n  - description: A thorough, definitive description of the scene, including translations of visible text and identification of specific elements.`;
     prompt += `\n  - keywords: 7-15 highly relevant keywords.`;
     prompt += `\n  - location: A detailed description of the identified location.`;
-    prompt += `\n  - gps: An object with 'latitude' and 'longitude' (number format). Provide this ONLY IF you can confidently deduce it from the Anchor Context, otherwise null.`;
+    prompt += `\n  - gps: An object with 'latitude' and 'longitude' (number format). Provide this ONLY IF you can confidently deduce it from the Anchor Context or if it was provided to you, otherwise null.`;
     prompt += `\n  - technicalDetails: Observations on lighting or composition.`;
     prompt += `\n  - confidence: Your confidence level (0.0 to 1.0).`;
     prompt += `\n  - uncertainFields: An array listing any fields you are unsure about.`;
+    
+    if (imageCount > 1) {
+      prompt += `\n\nThis image is part of a cluster of ${imageCount} related images.`;
+    }
     
     prompt += `\n\nOutput the result in the specified JSON format EXACTLY:`;
     prompt += `\n{`;

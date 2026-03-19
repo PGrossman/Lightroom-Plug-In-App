@@ -5065,6 +5065,7 @@ function generateFallbackPrompt(clusterGroup) {
   prompt += `  "description": "Detailed, literal description of what you see",\n`;
   prompt += `  "keywords": ["keyword1", "keyword2", "keyword3"],\n`;
   prompt += `  "location": "Location description or null",\n`;
+  prompt += `  "gps": {"latitude": 51.3895, "longitude": 30.0991},\n`;
   prompt += `  "technicalDetails": "Technical observations or null",\n`;
   prompt += `  "confidence": 0.85\n`;
   prompt += `}\n\n`;
