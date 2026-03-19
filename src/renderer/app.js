@@ -4623,7 +4623,7 @@ async function makeCard(cluster, metadata, index) {
   const filename = cluster.mainRep?.representativeFilename || 'Unknown';
   const title = metadata?.title || 'Untitled';
   const description = metadata?.description || 'No description';
-  const caption = metadata?.caption || 'No caption';
+  const caption = metadata?.caption || metadata?.description || 'No caption';
   
   // ✅ Check GPS from multiple sources (including bracket images)
   let gps = cluster.mainRep?.gps || metadata?.gps || cluster.gps;
@@ -4714,7 +4714,7 @@ async function handleGenerateAllXMP() {
   const generateBtn = document.getElementById('generateAllXMPBtn');
   if (generateBtn) {
     generateBtn.disabled = true;
-    generateBtn.textContent = '⏳ Generating XMP Files...';
+    generateBtn.textContent = '⏳ Updating Lightroom...';
   }
 
   // LIGHTROOM ROUND-TRIP MODE
@@ -5052,6 +5052,7 @@ function generateFallbackPrompt(clusterGroup) {
   
   prompt += `Please analyze this image and provide detailed metadata including:\n`;
   prompt += `- A descriptive title (be specific and engaging)\n`;
+  prompt += `- A short, engaging caption (1-2 sentences)\n`;
   prompt += `- Relevant keywords and tags (5-10 keywords)\n`;
   prompt += `- Location information if identifiable from the image\n`;
   prompt += `- Subject matter description (what you see in the image)\n`;
@@ -5060,9 +5061,10 @@ function generateFallbackPrompt(clusterGroup) {
   prompt += `Format your response as JSON with these exact fields:\n`;
   prompt += `{\n`;
   prompt += `  "title": "Descriptive title here",\n`;
+  prompt += `  "caption": "Short, engaging 1-2 sentence summary",\n`;
+  prompt += `  "description": "Detailed, literal description of what you see",\n`;
   prompt += `  "keywords": ["keyword1", "keyword2", "keyword3"],\n`;
   prompt += `  "location": "Location description or null",\n`;
-  prompt += `  "description": "Detailed description of what you see",\n`;
   prompt += `  "technicalDetails": "Technical observations or null",\n`;
   prompt += `  "confidence": 0.85\n`;
   prompt += `}\n\n`;

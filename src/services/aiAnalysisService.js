@@ -124,6 +124,7 @@ class AIAnalysisService {
     prompt += `\n- Visual Analysis: Examine the image for distinctive features, architecture, landscape, and overall mood.`;
     prompt += `\n- Construct Metadata: Create a JSON object with the following fields:`;
     prompt += `\n  - title: A specific and engaging title for the image.`;
+    prompt += `\n  - caption: A short, engaging caption (1-2 sentences, suitable for social media or display).`;
     prompt += `\n  - keywords: 7-15 relevant keywords and tags.`;
     prompt += `\n  - location: A detailed description of the identified location.`;
     prompt += `\n  - description: A thorough description of the scene.`;
@@ -138,9 +139,10 @@ class AIAnalysisService {
     prompt += `\n\nOutput the result in the specified JSON format EXACTLY:`;
     prompt += `\n{`;
     prompt += `\n  "title": "Descriptive title here",`;
+    prompt += `\n  "caption": "Short, punchy engaging summary",`;
+    prompt += `\n  "description": "Detailed, literal description of what you see",`;
     prompt += `\n  "keywords": ["keyword1", "keyword2", "keyword3"],`;
     prompt += `\n  "location": "Location description or null",`;
-    prompt += `\n  "description": "Detailed description of what you see",`;
     prompt += `\n  "technicalDetails": "Technical observations or null",`;
     prompt += `\n  "confidence": 0.95,`;
     prompt += `\n  "uncertainFields": []`;
