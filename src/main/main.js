@@ -2284,11 +2284,19 @@ app.on('window-all-closed', () => {
 
 // Clean up database connection on quit
 app.on('before-quit', () => {
-  // Stop CLIP service
-  if (clipServiceManager) {
-    clipServiceManager.stop();
-  }
-  
+  if (clipServiceManager) clipServiceManager.stop();
   databaseService.close();
+
+  // Release Lightroom if the user closes the app early
+  const requestPath = path.join(os.homedir(), 'Documents', 'LR_AI_Temp', 'request.json');
+  const responsePath = path.join(os.homedir(), 'Documents', 'LR_AI_Temp', 'response.json');
+  if (fs.existsSync(requestPath) && !fs.existsSync(responsePath)) {
+    try {
+      fs.writeFileSync(responsePath, JSON.stringify({ images: [] }, null, 2));
+      logger.info('Wrote empty response.json on quit to release Lightroom');
+    } catch (e) {
+      logger.error('Failed to write cancellation response', { error: e.message });
+    }
+  }
 });
 
