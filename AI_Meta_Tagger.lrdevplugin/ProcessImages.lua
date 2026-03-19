@@ -3,7 +3,6 @@ local LrTasks = import 'LrTasks'
 local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
 local LrDialogs = import 'LrDialogs'
--- local LrJson = import 'LrJson' -- Removed due to SDK inconsistencies
 local JSON = dofile(LrPathUtils.child(_PLUGIN.path, "JSON.lua"))
 
 local function main()
@@ -33,8 +32,13 @@ local function main()
     local requestData = { images = {} }
     for _, photo in ipairs(photos) do
         local path = photo:getRawMetadata('path')
-        local lat = photo:getRawMetadata('gpsLatitude')
-        local lon = photo:getRawMetadata('gpsLongitude')
+        -- FIX: Correct SDK method for reading GPS
+        local gps = photo:getRawMetadata('gps')
+        local lat, lon = nil, nil
+        if gps and type(gps) == 'table' then
+            lat = gps.latitude
+            lon = gps.longitude
+        end
         
         table.insert(requestData.images, {
             path = path,
@@ -55,20 +59,17 @@ local function main()
     end
 
     -- Launch Electron App
-    -- DETERMINING PROJECT PATH: The plugin is in [Project]/AI_Meta_Tagger.lrdevplugin
     local projectPath = LrPathUtils.parent(_PLUGIN.path)
-    -- We'll try to run via npm start. 
-    -- MODIFIED: Source the zsh profile to ensure Node/npm are in the PATH
+    -- Source the zsh profile to ensure Node/npm are in the PATH
     local shellCommand = string.format('/bin/zsh -i -c "cd %q && npm start &"', projectPath)
     LrTasks.execute(shellCommand)
 
-    -- Start polling loop in a message dialog so we don't block the UI entirely but show progress
+    -- Start polling loop
     LrTasks.startAsyncTask(function()
         local found = false
-        local timeout = 1800 -- 30 minutes timeout (AI analysis can take time)
+        local timeout = 1800 -- 30 minutes timeout
         local elapsed = 0
         
-        -- Optional: Show a progress dialog or just wait
         while not found and elapsed < timeout do
             if LrFileUtils.exists(responseFile) then
                 found = true
@@ -90,19 +91,29 @@ local function main()
                     -- Apply metadata with write access
                     catalog:withWriteAccessDo("Apply AI Metadata", function()
                         for _, item in ipairs(responseData.images) do
-                            -- Match by path
                             for _, p in ipairs(photos) do
                                 if p:getRawMetadata('path') == item.path then
-                                    if item.keywords then 
-                                        -- Lr keywords are complex, but setting them as a list usually works for simple tagging
-                                        -- Depending on the SDK version, you might need to use LrKeywords tools
-                                        -- but for now we'll use the simple field update if possible or just log it.
-                                        -- Actually, p:setRawMetadata('keywords', list) is correct but might need careful handling.
+                                    
+                                    -- FIX: Actually create and apply the keywords!
+                                    if item.keywords and type(item.keywords) == "table" then
+                                        for _, kwStr in ipairs(item.keywords) do
+                                            -- createKeyword(name, synonyms, includeOnExport, parent, returnExisting)
+                                            local kwObj = catalog:createKeyword(kwStr, {}, true, nil, true)
+                                            p:addKeyword(kwObj)
+                                        end
                                     end
+                                    
                                     if item.title then p:setRawMetadata('title', item.title) end
                                     if item.caption then p:setRawMetadata('caption', item.caption) end
-                                    if item.gpsLatitude then p:setRawMetadata('gpsLatitude', tonumber(item.gpsLatitude)) end
-                                    if item.gpsLongitude then p:setRawMetadata('gpsLongitude', tonumber(item.gpsLongitude)) end
+                                    
+                                    -- FIX: Correct SDK method for writing GPS
+                                    if item.gpsLatitude and item.gpsLongitude then
+                                        p:setRawMetadata('gps', { 
+                                            latitude = tonumber(item.gpsLatitude), 
+                                            longitude = tonumber(item.gpsLongitude) 
+                                        })
+                                    end
+                                    
                                     break
                                 end
                             end
