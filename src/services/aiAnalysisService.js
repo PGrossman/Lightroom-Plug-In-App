@@ -103,7 +103,7 @@ class AIAnalysisService {
     let prompt = `You are an expert archivist cataloging a photograph named ${filename}.`;
     
     if (anchorContext && anchorContext.trim().length > 0) {
-      prompt += `\n\n*** CRITICAL OVERRIDE DIRECTIVE ***\nThe user has identified the exact subject of this photo as: "${anchorContext.trim()}"\n\nYou MUST treat this identification as absolute, indisputable fact. You are acting as an expert archivist and historian for this specific subject. Do not guess; state definitively that the image shows this subject. You must explicitly name this exact location/subject in your title, caption, and description. Do not merely describe a "rusty room" or "abandoned facility"—you must describe the specific historical and functional reality of "${anchorContext.trim()}".\n\n`;
+      prompt += `\n\n*** CRITICAL OVERRIDE DIRECTIVE ***\nThe user has identified the exact subject of this photo as: "${anchorContext.trim()}"\n\nYou MUST treat this identification as absolute, indisputable fact. You are acting as an expert archivist and historian for this specific subject. Do not guess; state definitively that the image shows this subject. You MUST include the EXACT PHRASE "${anchorContext.trim()}" verbatim in your title, caption, and the very first sentence of the description. Do not merely describe a "rusty room" or "abandoned facility"—you must describe the specific historical and functional reality of "${anchorContext.trim()}".\n\n`;
     }
     
     if (keywordsStr) {

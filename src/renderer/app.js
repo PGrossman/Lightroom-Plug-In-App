@@ -1035,7 +1035,19 @@ async function loadSettings() {
     
     if (googleVisionApiKey) googleVisionApiKey.value = settings.googleVision?.apiKey || '';
     if (geminiTemperature) geminiTemperature.value = settings.aiAnalysis?.geminiTemperature ?? 0.3;
-    if (anchorContextInput) anchorContextInput.value = settings.aiAnalysis?.anchorContext || '';
+    if (anchorContextInput) {
+      anchorContextInput.value = settings.aiAnalysis?.anchorContext || '';
+      
+      // Auto-save the Anchor Context when the user finishes typing
+      if (!anchorContextInput.dataset.listenerAttached) {
+        anchorContextInput.addEventListener('change', async (e) => {
+          const val = e.target.value;
+          await window.electronAPI.saveAISettings({ anchorContext: val || null });
+          console.log('✅ Anchor Context auto-saved:', val);
+        });
+        anchorContextInput.dataset.listenerAttached = 'true';
+      }
+    }
     
     const enabledGeminiModels = settings.aiAnalysis?.enabledGeminiModels || [];
     const activeGeminiModel = settings.aiAnalysis?.activeGeminiModel || '';
