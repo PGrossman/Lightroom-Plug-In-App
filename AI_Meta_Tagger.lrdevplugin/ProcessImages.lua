@@ -97,28 +97,42 @@ local function main()
                             for _, p in ipairs(photos) do
                                 if p:getRawMetadata('path') == item.path then
                                     
-                                    -- FIX: Actually create and apply the keywords!
+                                    -- 1. Apply Keywords safely
                                     if item.keywords and type(item.keywords) == "table" then
                                         for _, kwStr in ipairs(item.keywords) do
                                             if type(kwStr) == "string" and kwStr ~= "" then
-                                                local kwObj = catalog:createKeyword(kwStr, {}, true, nil, true)
-                                                p:addKeyword(kwObj)
+                                                -- Strip commas and pipes which cause LR assertions
+                                                local safeKw = kwStr:gsub("[,|]", ""):gsub("^%s*(.-)%s*$", "%1")
+                                                if safeKw ~= "" then
+                                                    pcall(function()
+                                                        -- Pass nil instead of {} for synonyms to prevent asserts
+                                                        local kwObj = catalog:createKeyword(safeKw, nil, true, nil, true)
+                                                        if kwObj then
+                                                            p:addKeyword(kwObj)
+                                                        end
+                                                    end)
+                                                end
                                             end
                                         end
                                     end
                                     
+                                    -- 2. Apply Title safely
                                     if type(item.title) == "string" and item.title ~= "" then 
-                                        p:setRawMetadata('title', item.title) 
-                                    end
-                                    if type(item.caption) == "string" and item.caption ~= "" then 
-                                        p:setRawMetadata('caption', item.caption) 
+                                        pcall(function() p:setRawMetadata('title', item.title) end)
                                     end
                                     
-                                    if type(item.gpsLatitude) == "number" and type(item.gpsLongitude) == "number" then
-                                        p:setRawMetadata('gps', { 
-                                            latitude = item.gpsLatitude, 
-                                            longitude = item.gpsLongitude 
-                                        })
+                                    -- 3. Apply Caption safely
+                                    if type(item.caption) == "string" and item.caption ~= "" then 
+                                        pcall(function() p:setRawMetadata('caption', item.caption) end)
+                                    end
+                                    
+                                    -- 4. Apply GPS safely
+                                    local lat = tonumber(item.gpsLatitude)
+                                    local lon = tonumber(item.gpsLongitude)
+                                    if lat and lon then
+                                        pcall(function()
+                                            p:setRawMetadata('gps', { latitude = lat, longitude = lon })
+                                        end)
                                     end
                                     
                                     break
