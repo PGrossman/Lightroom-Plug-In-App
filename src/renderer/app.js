@@ -73,7 +73,12 @@ window.addEventListener('DOMContentLoaded', () => {
       showProgress(10);
       
       try {
-        const response = await window.electronAPI.scanFilesWithClustering(paths, 5);
+        // Fetch the user's saved threshold
+        const settings = await window.electronAPI.getAllSettings();
+        const threshold = settings.timestampThreshold || 5;
+        
+        // Use the saved threshold instead of hardcoded 5
+        const response = await window.electronAPI.scanFilesWithClustering(paths, threshold);
         if (!response.success) {
           throw new Error(response.error);
         }
@@ -1007,6 +1012,20 @@ async function loadSettings() {
     const thresholdInput = document.getElementById('timestampThreshold');
     if (thresholdInput) {
       thresholdInput.value = settings.timestampThreshold || 5;
+      
+      // Add Auto-Save listener
+      if (!thresholdInput.dataset.listenerAttached) {
+        thresholdInput.addEventListener('change', async (e) => {
+          const val = parseInt(e.target.value, 10);
+          if (!isNaN(val)) {
+            await window.electronAPI.saveTimestampThreshold(val);
+            if (typeof showNotification === 'function') {
+              showNotification(`Bracket threshold saved: ${val} seconds`);
+            }
+          }
+        });
+        thresholdInput.dataset.listenerAttached = 'true';
+      }
     }
     
     // AI Analysis settings

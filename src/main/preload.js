@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Settings
   getAllSettings: () => ipcRenderer.invoke('get-all-settings'),
+  saveTimestampThreshold: (value) => ipcRenderer.invoke('save-timestamp-threshold', value),
   
   // CLIP service management
   checkClipService: () => ipcRenderer.invoke('check-clip-service'),

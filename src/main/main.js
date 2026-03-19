@@ -1423,6 +1423,17 @@ ipcMain.handle('restart-clip-service', async () => {
   }
 });
 
+// Save timestamp threshold (bracket value)
+ipcMain.handle('save-timestamp-threshold', async (event, value) => {
+  try {
+    configManager.set('timestampThreshold', value);
+    return { success: true };
+  } catch (error) {
+    logger.error('Failed to save timestamp threshold', { error: error.message });
+    return { success: false, error: error.message };
+  }
+});
+
 // ============================================
 // AI Settings Handlers
 // ============================================
