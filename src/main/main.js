@@ -391,9 +391,24 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
       
       try {
         const metadata = await exifExtractor.extractMetadata(imagePath);
+        
+        // --- INJECT LIGHTROOM GPS ---
+        let lrGps = null;
+        if (global.lightroomJobData) {
+          const lrImg = global.lightroomJobData.find(img => img.path === imagePath);
+          if (lrImg && lrImg.gpsLatitude !== undefined && lrImg.gpsLatitude !== null) {
+            lrGps = {
+              latitude: parseFloat(lrImg.gpsLatitude),
+              longitude: parseFloat(lrImg.gpsLongitude)
+            };
+            logger.info('📍 Injected GPS from Lightroom Catalog', { imagePath, lrGps });
+          }
+        }
+        
         metadataResults.push({
           path: imagePath,
-          ...metadata
+          ...metadata,
+          gps: lrGps || metadata.gps // Prefer Lightroom Catalog GPS over file-level GPS
         });
 
         event.sender.send('progress', { 
@@ -2211,6 +2226,9 @@ async function checkLightroomJob(window) {
       const data = JSON.parse(fs.readFileSync(requestPath, 'utf8'));
       
       if (data && data.images) {
+        // Save Lightroom catalog data globally to access during processing
+        global.lightroomJobData = data.images;
+        
         // Map Lightroom's request structure to a flat array of paths for the scanner
         const paths = data.images.map(img => img.path);
         
