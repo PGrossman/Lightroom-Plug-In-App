@@ -12,12 +12,16 @@ class AIAnalysisService {
   /**
    * Main analysis method using Gemini
    */
-  async analyzeCluster(cluster, existingData = {}, _legacyProvider = null, customPromptOrAnchor = null) {
+  async analyzeCluster(cluster, existingData = {}, _legacyProvider = null, customPrompt = null) {
     console.log('\n🤖 === AI ANALYSIS START ===');
     console.log('   Cluster:', cluster.mainRep?.representativeFilename || 'unknown');
-    console.log('   hasAnchorContext:', !!customPromptOrAnchor);
     
-    const anchorContext = customPromptOrAnchor; // The UI sends the anchor context here
+    // FETCH GLOBAL ANCHOR CONTEXT DIRECTLY FROM SAVED SETTINGS
+    const globalAnchorContext = this.config.aiAnalysis?.anchorContext || null;
+    
+    console.log('   Global Anchor Context:', globalAnchorContext);
+    console.log('   Has Custom Prompt (Editor):', !!customPrompt);
+
     const context = this.buildContext(cluster, existingData);
     const repPath = cluster.mainRep.representativePath;
 
@@ -27,7 +31,15 @@ class AIAnalysisService {
 
     let result;
     try {
-      const prompt = this.buildPrompt(context, anchorContext);
+      let prompt;
+      
+      if (customPrompt) {
+        // If the user used the "Edit Prompt" button, use their exact words
+        prompt = customPrompt;
+      } else {
+        // Otherwise, build the Expert Archivist prompt using the Global Anchor Context
+        prompt = this.buildPrompt(context, globalAnchorContext);
+      }
       
       this.logger.info('Using Gemini for analysis', { model: this.config.aiAnalysis?.activeGeminiModel });
       result = await this.geminiService.analyzeImageWithVision(repPath, prompt);
@@ -175,8 +187,6 @@ class AIAnalysisService {
       });
     }
     
-    // TODO: Add derivatives count when derivative tracking is implemented
-    
     return total;
   }
 
@@ -212,8 +222,6 @@ class AIAnalysisService {
         }
       });
     }
-    
-    // TODO: Add derivatives when implemented
     
     // Remove duplicates
     return [...new Set(paths)];
