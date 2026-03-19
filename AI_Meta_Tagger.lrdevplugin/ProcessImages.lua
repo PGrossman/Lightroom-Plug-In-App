@@ -62,11 +62,10 @@ local function main()
     local projectPath = LrPathUtils.parent(_PLUGIN.path)
     
     -- Force macOS to include standard Node/npm installation paths
-    -- Use %s with single quotes to safely handle folder paths with spaces
-    local shellCommand = string.format('export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" && cd \'%s\' && npm start &', projectPath)
+    local shellCommand = string.format('export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" && cd "%s" && npm start &', projectPath)
     
-    -- Use os.execute instead of LrTasks for reliable detached background execution
-    os.execute(shellCommand)
+    -- We MUST use LrTasks.execute because os.execute is sandboxed
+    LrTasks.execute(shellCommand)
 
     -- Start polling loop
     LrTasks.startAsyncTask(function()
