@@ -4769,16 +4769,22 @@ async function handleGenerateAllXMP() {
 
       // Add each file to the response with its metadata
       allPathsInSuperCluster.forEach(filePath => {
-        responseData.images.push({
-          path: filePath,
-          keywords: (group.mainRep && group.mainRep.keywords && group.mainRep.keywords.length > 0) ? group.mainRep.keywords : (metadata.keywords || []),
-          title: metadata.title || '',
-          caption: metadata.caption || '',
-          description: metadata.description || '',
-          gpsLatitude: metadata.gps?.latitude || null,
-          gpsLongitude: metadata.gps?.longitude || null
+          // Merge and deduplicate keywords from both UI editors
+          const combinedKeywords = [...new Set([
+            ...(metadata.keywords || []),
+            ...(group.mainRep?.keywords || [])
+          ])];
+
+          responseData.images.push({
+            path: filePath,
+            keywords: combinedKeywords,
+            title: metadata.title || '',
+            caption: metadata.caption || '',
+            description: metadata.description || '',
+            gpsLatitude: metadata.gps?.latitude || null,
+            gpsLongitude: metadata.gps?.longitude || null
+          });
         });
-      });
     }
 
     try {

@@ -105,8 +105,12 @@ local function main()
                                                 local safeKw = kwStr:gsub("[,|]", ""):gsub("^%s*(.-)%s*$", "%1")
                                                 if safeKw ~= "" then
                                                     pcall(function()
-                                                        -- Pass nil instead of {} for synonyms to prevent asserts
-                                                        local kwObj = catalog:createKeyword(safeKw, nil, true, nil, true)
+                                                        -- Query existing keyword first to bypass createKeyword asserts
+                                                        local kwObj = catalog:getKeyword(safeKw)
+                                                        if not kwObj then
+                                                            kwObj = catalog:createKeyword(safeKw, nil, true, nil, true)
+                                                        end
+                                                        
                                                         if kwObj then
                                                             p:addKeyword(kwObj)
                                                         end
