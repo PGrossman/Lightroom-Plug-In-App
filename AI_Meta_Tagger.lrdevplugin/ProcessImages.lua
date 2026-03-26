@@ -121,14 +121,16 @@ local function main()
                                         pcall(function() p:setRawMetadata('title', item.title) end)
                                     end
                                     
-                                    -- 3. Apply Headline safely (AI Caption -> LR Headline)
-                                    if type(item.caption) == "string" and item.caption ~= "" then 
-                                        pcall(function() p:setRawMetadata('headline', item.caption) end)
+                                    -- 3. Apply Caption safely (AI Caption -> LR Caption, fallback to AI Description)
+                                    local finalCaption = ""
+                                    if type(item.caption) == "string" and item.caption ~= "" then
+                                        finalCaption = item.caption
+                                    elseif type(item.description) == "string" and item.description ~= "" then
+                                        finalCaption = item.description
                                     end
 
-                                    -- 4. Apply Caption safely (AI Description -> LR Caption)
-                                    if type(item.description) == "string" and item.description ~= "" then 
-                                        pcall(function() p:setRawMetadata('caption', item.description) end)
+                                    if finalCaption ~= "" then
+                                        pcall(function() p:setRawMetadata('caption', finalCaption) end)
                                     end
                                     
                                     -- 4. Apply GPS safely

@@ -4771,7 +4771,7 @@ async function handleGenerateAllXMP() {
       allPathsInSuperCluster.forEach(filePath => {
         responseData.images.push({
           path: filePath,
-          keywords: metadata.keywords || [],
+          keywords: (group.mainRep && group.mainRep.keywords && group.mainRep.keywords.length > 0) ? group.mainRep.keywords : (metadata.keywords || []),
           title: metadata.title || '',
           caption: metadata.caption || '',
           description: metadata.description || '',
