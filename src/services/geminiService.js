@@ -182,13 +182,15 @@ class GeminiService {
       const cleaned = jsonText.trim();
       
       // Parse JSON
-      return JSON.parse(cleaned);
+      const parsed = JSON.parse(cleaned);
+      return this.normalizeKeywords(parsed);
     } catch (error) {
       // If parsing fails, try to find JSON object in the text
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         try {
-          return JSON.parse(jsonMatch[0]);
+          const parsed = JSON.parse(jsonMatch[0]);
+          return this.normalizeKeywords(parsed);
         } catch (e) {
           this.logger.warn('Failed to parse JSON from Gemini response', { 
             error: e.message,
@@ -209,6 +211,24 @@ class GeminiService {
         rawResponse: responseText.substring(0, 500)
       };
     }
+  }
+
+  /**
+   * Normalize keywords: convert comma-separated string to array if needed.
+   * LLMs sometimes return "keyword1, keyword2" instead of ["keyword1", "keyword2"].
+   * ProcessImages.lua requires a Lua table, so we must guarantee an array here.
+   */
+  normalizeKeywords(parsed) {
+    if (parsed && typeof parsed.keywords === 'string') {
+      this.logger.warn('Keywords returned as string, converting to array', {
+        original: parsed.keywords.substring(0, 100)
+      });
+      parsed.keywords = parsed.keywords
+        .split(',')
+        .map(k => k.trim())
+        .filter(k => k.length > 0);
+    }
+    return parsed;
   }
 
   /**

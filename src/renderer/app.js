@@ -4773,7 +4773,8 @@ async function handleGenerateAllXMP() {
           path: filePath,
           keywords: metadata.keywords || [],
           title: metadata.title || '',
-          caption: metadata.caption || metadata.description || '',
+          caption: metadata.caption || '',
+          description: metadata.description || '',
           gpsLatitude: metadata.gps?.latitude || null,
           gpsLongitude: metadata.gps?.longitude || null
         });
