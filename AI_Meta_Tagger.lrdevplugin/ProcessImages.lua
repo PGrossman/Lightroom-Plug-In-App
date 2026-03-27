@@ -97,7 +97,7 @@ local function main()
                             for _, p in ipairs(photos) do
                                 if p:getRawMetadata('path') == item.path then
                                     
-                                    -- 1. Apply Keywords safely (with debug logging)
+                                    -- 1. Apply Keywords (no pcall - createKeyword is a yielding function)
                                     local debugLog = io.open(LrPathUtils.child(tempPath, "keyword_debug.log"), "a")
                                     if debugLog then
                                         debugLog:write("\n=== Processing: " .. (item.path or "unknown") .. " ===\n")
@@ -112,19 +112,16 @@ local function main()
                                                 if safeKw ~= "" then
                                                     if debugLog then debugLog:write("  Trying keyword: [" .. safeKw .. "]\n") end
                                                     
-                                                    local ok, kwObj = pcall(function()
-                                                        return catalog:createKeyword(safeKw, {}, true, nil, true)
-                                                    end)
+                                                    -- Call directly - no pcall allowed (yielding function)
+                                                    local kwObj = catalog:createKeyword(safeKw, {}, true, nil, true)
                                                     
                                                     if debugLog then
-                                                        debugLog:write("    createKeyword ok=" .. tostring(ok) .. " kwObj=" .. tostring(kwObj) .. "\n")
+                                                        debugLog:write("    createKeyword result: " .. tostring(kwObj) .. "\n")
                                                     end
                                                     
-                                                    if ok and kwObj then
-                                                        local addOk, addErr = pcall(function() p:addKeyword(kwObj) end)
-                                                        if debugLog then
-                                                            debugLog:write("    addKeyword ok=" .. tostring(addOk) .. " err=" .. tostring(addErr) .. "\n")
-                                                        end
+                                                    if kwObj then
+                                                        p:addKeyword(kwObj)
+                                                        if debugLog then debugLog:write("    addKeyword: SUCCESS\n") end
                                                     end
                                                 end
                                             end
