@@ -104,22 +104,13 @@ local function main()
                                                 -- Strip commas and pipes which cause LR assertions
                                                 local safeKw = kwStr:gsub("[,|]", ""):gsub("^%s*(.-)%s*$", "%1")
                                                 if safeKw ~= "" then
-                                                    pcall(function()
-                                                        local kwObj = nil
-                                                        -- Correct SDK method: getKeywords returns an array
-                                                        local existingKws = catalog:getKeywords(safeKw)
-                                                        
-                                                        if existingKws and #existingKws > 0 then
-                                                            kwObj = existingKws[1]
-                                                        else
-                                                            -- Pass empty table {} for synonyms to bypass createKeyword asserts
-                                                            kwObj = catalog:createKeyword(safeKw, {}, true, nil, true)
-                                                        end
-                                                        
-                                                        if kwObj then
-                                                            p:addKeyword(kwObj)
-                                                        end
+                                                    -- Separate pcalls so a create failure doesn't block addKeyword
+                                                    local ok, kwObj = pcall(function()
+                                                        return catalog:createKeyword(safeKw, {}, true, nil, true)
                                                     end)
+                                                    if ok and kwObj then
+                                                        pcall(function() p:addKeyword(kwObj) end)
+                                                    end
                                                 end
                                             end
                                         end
