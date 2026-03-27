@@ -97,24 +97,43 @@ local function main()
                             for _, p in ipairs(photos) do
                                 if p:getRawMetadata('path') == item.path then
                                     
-                                    -- 1. Apply Keywords safely
+                                    -- 1. Apply Keywords safely (with debug logging)
+                                    local debugLog = io.open(LrPathUtils.child(tempPath, "keyword_debug.log"), "a")
+                                    if debugLog then
+                                        debugLog:write("\n=== Processing: " .. (item.path or "unknown") .. " ===\n")
+                                        debugLog:write("item.keywords type: " .. type(item.keywords) .. "\n")
+                                    end
+                                    
                                     if item.keywords and type(item.keywords) == "table" then
+                                        if debugLog then debugLog:write("Keywords count: " .. #item.keywords .. "\n") end
                                         for _, kwStr in ipairs(item.keywords) do
                                             if type(kwStr) == "string" and kwStr ~= "" then
-                                                -- Strip commas and pipes which cause LR assertions
                                                 local safeKw = kwStr:gsub("[,|]", ""):gsub("^%s*(.-)%s*$", "%1")
                                                 if safeKw ~= "" then
-                                                    -- Separate pcalls so a create failure doesn't block addKeyword
+                                                    if debugLog then debugLog:write("  Trying keyword: [" .. safeKw .. "]\n") end
+                                                    
                                                     local ok, kwObj = pcall(function()
                                                         return catalog:createKeyword(safeKw, {}, true, nil, true)
                                                     end)
+                                                    
+                                                    if debugLog then
+                                                        debugLog:write("    createKeyword ok=" .. tostring(ok) .. " kwObj=" .. tostring(kwObj) .. "\n")
+                                                    end
+                                                    
                                                     if ok and kwObj then
-                                                        pcall(function() p:addKeyword(kwObj) end)
+                                                        local addOk, addErr = pcall(function() p:addKeyword(kwObj) end)
+                                                        if debugLog then
+                                                            debugLog:write("    addKeyword ok=" .. tostring(addOk) .. " err=" .. tostring(addErr) .. "\n")
+                                                        end
                                                     end
                                                 end
                                             end
                                         end
+                                    else
+                                        if debugLog then debugLog:write("SKIPPED: keywords not a table\n") end
                                     end
+                                    
+                                    if debugLog then debugLog:close() end
                                     
                                     -- 2. Apply Title safely (AI Title -> LR Title)
                                     if type(item.title) == "string" and item.title ~= "" then 
