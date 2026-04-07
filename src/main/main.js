@@ -1,7 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 
 // DEBUG: Add file-based logging
 console.log('🚀 MAIN.JS LOADED - VERSION 3.0 - CLIP SIMILARITY ENABLED - NEW CODE LOADED');
@@ -11,6 +10,7 @@ const DatabaseService = require('../services/databaseService');
 const ConfigManager = require('../services/configManager');
 const ExifExtractor = require('../services/exifExtractor');
 const ImageProcessor = require('../services/imageProcessor');
+const FolderKeywordParser = require('../services/folderKeywordParser');
 const ClusterRefiner = require('../services/clusterRefiner');
 const SimilarityDetector = require('../services/similarityDetector');
 const ClipServiceManager = require('../services/clipServiceManager');
@@ -25,6 +25,7 @@ const databaseService = new DatabaseService();
 const configManager = new ConfigManager();
 const exifExtractor = new ExifExtractor();
 const imageProcessor = new ImageProcessor();
+const folderKeywordParser = new FolderKeywordParser();
 const similarityDetector = new SimilarityDetector(configManager.getAllSettings());
 const clusterRefiner = new ClusterRefiner(imageProcessor);
 
@@ -391,24 +392,9 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
       
       try {
         const metadata = await exifExtractor.extractMetadata(imagePath);
-        
-        // --- INJECT LIGHTROOM GPS ---
-        let lrGps = null;
-        if (global.lightroomJobData) {
-          const lrImg = global.lightroomJobData.find(img => img.path === imagePath);
-          if (lrImg && lrImg.gpsLatitude !== undefined && lrImg.gpsLatitude !== null) {
-            lrGps = {
-              latitude: parseFloat(lrImg.gpsLatitude),
-              longitude: parseFloat(lrImg.gpsLongitude)
-            };
-            logger.info('📍 Injected GPS from Lightroom Catalog', { imagePath, lrGps });
-          }
-        }
-        
         metadataResults.push({
           path: imagePath,
-          ...metadata,
-          gps: lrGps || metadata.gps // Prefer Lightroom Catalog GPS over file-level GPS
+          ...metadata
         });
 
         event.sender.send('progress', { 
@@ -422,7 +408,30 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
       }
     }
 
-    // Step 2: (DEPRECATED) Folder Keywords removed as per user request
+    // Step 2: Extract folder keywords PER CLUSTER
+    event.sender.send('progress', { 
+      stage: 'keywords', 
+      message: 'Extracting folder keywords...',
+      percent: 30 
+    });
+
+    // Extract keywords for each cluster based on its representative's location
+    const clusterKeywords = new Map();
+    for (const cluster of scanResults.clusters) {
+      const representativePath = cluster.representative || cluster.representativePath;
+      const imageDir = path.dirname(representativePath);
+      
+      // Parse keywords from the image's directory (relative to base scan dir)
+      const keywords = folderKeywordParser.parseKeywordsRelative(imageDir, dirPath);
+      clusterKeywords.set(cluster.representative, keywords);
+      
+      logger.debug('Keywords for cluster', {
+        representative: path.basename(cluster.representative),
+        folder: path.basename(imageDir),
+        keywords: keywords.all
+      });
+    }
+    logger.info('Keywords extracted for all clusters', { totalClusters: clusterKeywords.size });
 
     // ✅ CRITICAL DECISION POINT: Process differently based on skipClustering
     if (skipClustering) {
@@ -512,7 +521,7 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
             processedImages: processedImages, // ✅ Per-image processed data
             derivatives: derivatives,
             isBracketed: cluster.isBracketed,
-            keywords: [],
+            keywords: clusterKeywords.get(cluster.representative)?.all || [],
             timestamp: processedImages.find(img => img.isRepresentative)?.timestamp,
             gps: processedImages.find(img => img.isRepresentative)?.gps, // Representative GPS for compatibility
             processed: true,
@@ -540,7 +549,9 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
           clustersProcessed: bracketGroupResults.length,
           imagesProcessed: totalImagesProcessed,
           imagesFailed: 0,
-          keywords: [],
+          keywords: Array.from(new Set(
+            Array.from(clusterKeywords.values()).flatMap(kw => kw.all)
+          )),
           savedToDatabase: 0,
           similarPairs: 0
         },
@@ -643,6 +654,14 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
           success: result.success
         });
         
+        // Get keywords for this specific image's cluster
+        const imageCluster = scanResults.clusters.find(c => 
+          c.representative === imagePath || c.representativePath === imagePath
+        );
+        const imageKeywords = imageCluster ? 
+          (clusterKeywords.get(imageCluster.representative) || { all: [] }) : 
+          { all: [] };
+        
         imageResults.push({
           path: imagePath,
           success: result.success,
@@ -650,7 +669,7 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
           previewPath: result.previewPath,
           timestamp: metadata?.timestamp,
           gps: metadata?.gps,
-          keywords: [],
+          keywords: imageKeywords.all,
           error: result.error
         });
 
@@ -661,13 +680,21 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
           stack: error.stack
         });
         
+        // Get keywords for this specific image's cluster
+        const imageCluster = scanResults.clusters.find(c => 
+          c.representative === imagePath || c.representativePath === imagePath
+        );
+        const imageKeywords = imageCluster ? 
+          (clusterKeywords.get(imageCluster.representative) || { all: [] }) : 
+          { all: [] };
+        
         imageResults.push({
           path: imagePath,
           success: false,
           error: error.message,
           timestamp: metadata?.timestamp,
           gps: metadata?.gps,
-          keywords: []
+          keywords: imageKeywords.all
         });
       }
 
@@ -1158,7 +1185,7 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
     // Build cluster results for UI
     const processedClusters = scanResults.clusters.map(cluster => {
       const repResult = imageResults.find(r => r.path === cluster.representative);
-      const clusterKW = { all: [] };
+      const clusterKW = clusterKeywords.get(cluster.representative) || { all: [] };
       
       // ✅ FIX: Get derivatives from ALL images in the cluster, not just representative
       // Problem: Derivatives are keyed by base image, but representative can be any bracketed image
@@ -1202,7 +1229,11 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
       };
     });
 
-    const allKeywords = [];
+    // Collect all unique keywords from all clusters
+    const allKeywords = new Set();
+    clusterKeywords.forEach(kw => {
+      kw.all.forEach(keyword => allKeywords.add(keyword));
+    });
     
     return { 
       success: true,
@@ -1210,7 +1241,7 @@ ipcMain.handle('process-images', async (event, scanResults, dirPath, skipCluster
         clustersProcessed: representativesToProcess.length,
         imagesProcessed: imageResults.filter(r => r.success).length,
         imagesFailed: imageResults.filter(r => !r.success).length,
-        keywords: [], // All unique keywords across all clusters
+        keywords: Array.from(allKeywords), // All unique keywords across all clusters
         savedToDatabase: saveResult.saved || 0,
         similarPairs: similarityResults.length // NEW
       },
@@ -1419,17 +1450,6 @@ ipcMain.handle('restart-clip-service', async () => {
     return { success: true };
   } catch (error) {
     logger.error('Failed to restart CLIP service', { error: error.message });
-    return { success: false, error: error.message };
-  }
-});
-
-// Save timestamp threshold (bracket value)
-ipcMain.handle('save-timestamp-threshold', async (event, value) => {
-  try {
-    configManager.set('timestampThreshold', value);
-    return { success: true };
-  } catch (error) {
-    logger.error('Failed to save timestamp threshold', { error: error.message });
     return { success: false, error: error.message };
   }
 });
@@ -2049,6 +2069,40 @@ function createWindow() {
   if (process.env.NODE_ENV === 'development') {
     win.webContents.openDevTools();
   }
+
+  // ✅ LIGHTROOM HANDOFF: Check for request.json from Lightroom plugin
+  win.webContents.on('did-finish-load', () => {
+    try {
+      const os = require('os');
+      const documentsPath = path.join(os.homedir(), 'Documents');
+      const lrTempPath = path.join(documentsPath, 'LR_AI_Temp');
+      const requestFile = path.join(lrTempPath, 'request.json');
+
+      if (fs.existsSync(requestFile)) {
+        logger.info('📸 Lightroom request.json detected!', { path: requestFile });
+        const raw = fs.readFileSync(requestFile, 'utf8');
+        const requestData = JSON.parse(raw);
+
+        if (requestData && requestData.images && requestData.images.length > 0) {
+          const imagePaths = requestData.images
+            .map(img => img.path)
+            .filter(p => p && fs.existsSync(p));
+
+          logger.info('📸 Sending Lightroom images to renderer', { count: imagePaths.length });
+
+          // Send image paths to the renderer for automatic loading
+          win.webContents.send('lightroom-images-loaded', {
+            imagePaths: imagePaths,
+            requestData: requestData
+          });
+        } else {
+          logger.warn('📸 Lightroom request.json was empty or had no images');
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to read Lightroom request.json', { error: error.message });
+    }
+  });
 }
 
 function createSplash() {
@@ -2217,65 +2271,6 @@ app.whenReady().then(async () => {
       createWindow();
     }
   });
-
-  // Check for Lightroom job after window is ready
-  const windows = BrowserWindow.getAllWindows();
-  if (windows.length > 0) {
-    checkLightroomJob(windows[0]);
-  }
-});
-
-/**
- * Check if the application was launched from Lightroom via a request.json file
- */
-async function checkLightroomJob(window) {
-  const requestPath = path.join(os.homedir(), 'Documents', 'LR_AI_Temp', 'request.json');
-  
-  if (fs.existsSync(requestPath)) {
-    try {
-      logger.info('🚀 Lightroom job detected!', { path: requestPath });
-      const data = JSON.parse(fs.readFileSync(requestPath, 'utf8'));
-      
-      if (data && data.images) {
-        // Save Lightroom catalog data globally to access during processing
-        global.lightroomJobData = data.images;
-        
-        // Map Lightroom's request structure to a flat array of paths for the scanner
-        const paths = data.images.map(img => img.path);
-        
-        // Wait for renderer to be ready before sending
-        window.webContents.on('did-finish-load', () => {
-          logger.info('Sending lightroom-job-loaded to renderer', { count: paths.length });
-          window.webContents.send('lightroom-job-loaded', paths);
-        });
-        
-        // Also send if already loaded
-        if (!window.webContents.isLoading()) {
-          logger.info('Renderer already ready, sending lightroom-job-loaded immediately');
-          window.webContents.send('lightroom-job-loaded', paths);
-        }
-      }
-    } catch (error) {
-      logger.error('Failed to read Lightroom request.json', { error: error.message });
-    }
-  } else {
-    logger.info('No Lightroom job detected on startup.');
-  }
-}
-
-// Handler for writing response back to Lightroom
-ipcMain.handle('write-lightroom-response', async (event, responseData) => {
-  const responsePath = path.join(os.homedir(), 'Documents', 'LR_AI_Temp', 'response.json');
-  
-  try {
-    logger.info('📝 Writing response to Lightroom...', { path: responsePath });
-    fs.writeFileSync(responsePath, JSON.stringify(responseData, null, 2));
-    logger.info('✅ Lightroom response written successfully');
-    return { success: true };
-  } catch (error) {
-    logger.error('Failed to write Lightroom response.json', { error: error.message });
-    return { success: false, error: error.message };
-  }
 });
 
 app.on('window-all-closed', () => {
@@ -2284,19 +2279,11 @@ app.on('window-all-closed', () => {
 
 // Clean up database connection on quit
 app.on('before-quit', () => {
-  if (clipServiceManager) clipServiceManager.stop();
-  databaseService.close();
-
-  // Release Lightroom if the user closes the app early
-  const requestPath = path.join(os.homedir(), 'Documents', 'LR_AI_Temp', 'request.json');
-  const responsePath = path.join(os.homedir(), 'Documents', 'LR_AI_Temp', 'response.json');
-  if (fs.existsSync(requestPath) && !fs.existsSync(responsePath)) {
-    try {
-      fs.writeFileSync(responsePath, JSON.stringify({ images: [] }, null, 2));
-      logger.info('Wrote empty response.json on quit to release Lightroom');
-    } catch (e) {
-      logger.error('Failed to write cancellation response', { error: e.message });
-    }
+  // Stop CLIP service
+  if (clipServiceManager) {
+    clipServiceManager.stop();
   }
+  
+  databaseService.close();
 });
 

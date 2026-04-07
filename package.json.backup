@@ -1,0 +1,46 @@
+{
+  "name": "lightroom-xmp-generator",
+  "version": "1.0.0",
+  "description": "Local Electron app for AI-powered XMP metadata generation",
+  "main": "src/main/main.js",
+  "private": true,
+  "scripts": {
+    "start": "NODE_OPTIONS='--max-old-space-size=8192' electron .",
+    "dev": "NODE_ENV=development electron .",
+    "test": "node --test tests/**/*.test.js",
+    "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "postinstall": "electron-rebuild",
+    "setup-python": "chmod +x install_pytorch_mps.sh && ./install_pytorch_mps.sh",
+    "verify-gpu": "source venv/bin/activate && python3 verify_mps.py",
+    "setup-clip": "source venv/bin/activate && pip3 install torch torchvision transformers ftfy regex fastapi uvicorn",
+    "test-clip": "source venv/bin/activate && python3 similarity_service.py",
+    "rebuild-native": "npm rebuild sharp electron --arch=arm64 --platform=darwin",
+    "optimize": "npm run setup-python && npm run rebuild-native && npm run verify-gpu",
+    "clean": "rm -rf node_modules venv && npm install && npm run setup-python"
+  },
+  "keywords": [
+    "lightroom",
+    "xmp",
+    "metadata",
+    "ai",
+    "photography"
+  ],
+  "author": "Local Development",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "electron": "^27.0.0",
+    "electron-rebuild": "^3.2.9"
+  },
+  "dependencies": {
+    "@google-cloud/vision": "^4.0.0",
+    "axios": "^1.6.0",
+    "better-sqlite3": "^12.4.1",
+    "dotenv": "^16.3.0",
+    "exiftool-vendored": "^31.1.0",
+    "hamming-distance": "^1.0.0",
+    "imghash": "^0.0.3",
+    "papaparse": "^5.5.3",
+    "sharp": "^0.33.5",
+    "winston": "^3.11.0"
+  }
+}

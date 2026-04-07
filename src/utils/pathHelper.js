@@ -14,9 +14,15 @@ class PathHelper {
     }
   }
 
+  /**
+   * Get Python executable path
+   */
   static getPythonPath() {
-    // Always use the runtime venv under userData for consistency between dev and prod
-    return path.join(this.getUserVenvPath(), 'bin', 'python3');
+    if (this.isPackaged()) {
+      // Use runtime venv under userData for portability
+      return path.join(this.getUserVenvPath(), 'bin', 'python3');
+    }
+    return path.join(process.cwd(), 'venv', 'bin', 'python3');
   }
 
   /**

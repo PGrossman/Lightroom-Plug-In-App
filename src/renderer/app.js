@@ -12,7 +12,6 @@ let scanResults = null;
 let currentPage = 1;
 let rowsPerPage = 10;
 let allClusters = [];
-window.lightroomMode = false; // Flag to track if we're in Lightroom Round-Trip mode
 
 // Prompt editing state
 let customPrompts = new Map(); // Map of representativePath -> customPrompt
@@ -23,6 +22,8 @@ let currentEditingCluster = null; // Currently editing cluster in modal
 let currentEditingGroupIndex = null; // Currently editing group index
 
 // UI Elements - Will be initialized after DOM loads
+let selectDirBtn;
+let dropzone;
 let resultsTable;
 let resultsTableBody;
 let processImagesBtn;
@@ -38,6 +39,8 @@ window.addEventListener('DOMContentLoaded', () => {
   console.log('DOM Content Loaded - Now initializing elements...');
   
   // Get all DOM elements
+  selectDirBtn = document.getElementById('selectDirBtn');
+  dropzone = document.getElementById('dropzone');
   resultsTable = document.getElementById('resultsTable');
   resultsTableBody = document.getElementById('resultsTableBody');
   processImagesBtn = document.getElementById('processImagesBtn');
@@ -62,51 +65,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Check database on startup
   checkDatabaseOnStartup();
-
-  // Listen for Lightroom jobs
-  if (window.electronAPI && window.electronAPI.onLightroomJobLoaded) {
-    window.electronAPI.onLightroomJobLoaded(async (paths) => {
-      console.log('🚀 Lightroom job received in renderer!', { count: paths.length });
-      window.lightroomMode = true;
-      
-      updateStatus('Loading images from Lightroom...', 'scanning');
-      showProgress(10);
-      
-      try {
-        // Fetch the user's saved threshold
-        const settings = await window.electronAPI.getAllSettings();
-        const threshold = settings.timestampThreshold || 5;
-        
-        // Use the saved threshold instead of hardcoded 5
-        const response = await window.electronAPI.scanFilesWithClustering(paths, threshold);
-        if (!response.success) {
-          throw new Error(response.error);
-        }
-        
-        scanResults = response.results;
-        window.scanResults = scanResults;
-        
-        // Set a valid selectedDirectory for downstream processing (common parent)
-        try {
-          const parent = await window.electronAPI.getParentDir(paths[0]);
-          window.selectedDirectory = parent;
-        } catch {
-          window.selectedDirectory = "Lightroom_Job";
-        }
-        
-        updateStatus('Lightroom images loaded and clustered!', 'ready');
-        displayScanResults(response.summary);
-        populateResultsTableWithClusters(scanResults);
-        
-        if (processImagesBtn) {
-          processImagesBtn.disabled = false;
-        }
-      } catch (error) {
-        console.error('Failed to process Lightroom paths:', error);
-        updateStatus(`Error loading Lightroom images: ${error.message}`, 'error');
-      }
-    });
-  }
 });
 
 // Initialize modal listeners AFTER full page load (including modal HTML)
@@ -191,6 +149,107 @@ function initializeEventListeners() {
     });
   });
 
+  // Select directory button
+  if (selectDirBtn) {
+    console.log('DEBUG: Adding click listener to selectDirBtn');
+    selectDirBtn.addEventListener('click', async () => {
+      console.log('==== BUTTON CLICKED ====');
+      try {
+        await selectAndScanDirectory();
+      } catch (error) {
+        console.error('ERROR in button click handler:', error);
+      }
+    });
+    console.log('✅ Select button listener attached');
+  } else {
+    console.error('CRITICAL ERROR: selectDirBtn is NULL after DOM load!');
+  }
+
+  // Dropzone event listeners
+  if (dropzone) {
+    dropzone.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.add('dragover');
+      dropzone.style.backgroundColor = '#e3f2fd';
+      dropzone.style.borderColor = '#3498db';
+    });
+    
+    dropzone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.remove('dragover');
+      dropzone.style.backgroundColor = '#f8f9fa';
+      dropzone.style.borderColor = '#cbd5e0';
+    });
+
+    dropzone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.remove('dragover');
+      dropzone.style.backgroundColor = '#d4edda';
+      dropzone.style.borderColor = 'var(--status-green)';
+      
+      const fileList = Array.from(e.dataTransfer.files || []);
+      if (fileList.length === 0) return;
+
+      const paths = fileList.map(f => f.path).filter(Boolean);
+      const isDirFlags = await Promise.all(paths.map(p => window.electronAPI.isDirectory(p)));
+      const anyDir = isDirFlags.some(Boolean);
+
+      if (anyDir) {
+        // If any directory present, prefer directory scan on first directory
+        const firstDir = paths[isDirFlags.findIndex(Boolean)];
+        console.log('Directory dropped:', firstDir);
+        await selectAndScanDirectory(firstDir);
+      } else {
+        // Files-only: scan exactly these files
+        console.log('Files dropped:', paths.length, 'files');
+        const response = await window.electronAPI.scanFilesWithClustering(paths, 5);
+        if (!response.success) {
+          alert('Failed to process files: ' + response.error);
+          return;
+        }
+
+        scanResults = response.results;
+        const summary = response.summary;
+        window.scanResults = scanResults;
+        // Set a reasonable selectedDirectory for downstream processing (common parent)
+        try {
+          const parent = await window.electronAPI.getParentDir(paths[0]);
+          window.selectedDirectory = parent;
+        } catch {
+          window.selectedDirectory = null;
+        }
+
+        // Update UI similarly to directory flow
+        updateStatus('Files added successfully', 'complete');
+        displayScanResults(summary);
+        populateResultsTableWithClusters(scanResults);
+        console.log('Files-only scan results:', scanResults);
+
+        // Enable the process button
+        if (processImagesBtn) {
+          processImagesBtn.disabled = false;
+        }
+      }
+    });
+
+    dropzone.addEventListener('click', async (e) => {
+      if (e.target.id !== 'selectDirBtn') {
+        await selectAndScanDirectory();
+      }
+    });
+    
+    console.log('✅ Dropzone listeners attached');
+  } else {
+    console.error('CRITICAL ERROR: dropzone is NULL after DOM load!');
+  }
   
   // Process Images button
   if (processImagesBtn) {
@@ -321,6 +380,86 @@ function initializeEventListeners() {
   console.log('✅ All event listeners initialized successfully!');
 }
 
+// ============================================
+// Main Scan Function
+// ============================================
+async function selectAndScanDirectory(dirPath = null) {
+  console.log('==== selectAndScanDirectory CALLED ====');
+  
+  try {
+    // If dirPath is provided (from drag & drop), use it directly
+    if (dirPath) {
+      console.log('Using provided directory path:', dirPath);
+      selectedDirectory = dirPath;
+    } else {
+      // Otherwise, show directory selection dialog
+      console.log('Step 1: Calling selectDirectory...');
+      const result = await window.electronAPI.selectDirectory();
+      console.log('Step 2: Directory result:', result);
+      
+      if (result.canceled) {
+        console.log('Step 3: User canceled selection');
+        return;
+      }
+      
+      selectedDirectory = result.path;
+      console.log('Step 4: Selected directory:', selectedDirectory);
+    }
+    
+    // Update status
+    console.log('Step 5: Updating UI status...');
+    updateStatus('Scanning directory and analyzing timestamps...', 'scanning');
+    showProgress(10);
+    
+    console.log('Step 6: Starting scan with clustering...');
+    
+    // Perform scan WITH CLUSTERING (5 second threshold)
+    const response = await window.electronAPI.scanDirectoryWithClustering(
+      selectedDirectory,
+      5  // 5 second threshold for bracketed shots
+    );
+    
+    console.log('Step 7: Scan response received:', response);
+    
+    showProgress(100);
+    
+    if (!response.success) {
+      throw new Error(response.error);
+    }
+    
+    scanResults = response.results;
+    const summary = response.summary;
+    
+    // Store globally for processing
+    window.scanResults = scanResults;
+    window.selectedDirectory = selectedDirectory;
+    
+    console.log('Step 8: Scan results:', scanResults);
+    console.log('Step 9: Summary:', summary);
+    console.log('Step 9b: Stored globally:', { 
+      hasScanResults: !!window.scanResults, 
+      hasSelectedDir: !!window.selectedDirectory 
+    });
+    
+    // Update UI with results
+    displayScanResults(summary);
+    populateResultsTableWithClusters(scanResults);
+    
+    updateStatus('Scan complete with timestamp clustering!', 'ready');
+    
+    // Enable the process button
+    if (processImagesBtn) {
+      processImagesBtn.disabled = false;
+    }
+    
+    console.log('Step 10: UI updated successfully!');
+    
+  } catch (error) {
+    console.error('ERROR in selectAndScanDirectory:', error);
+    updateStatus(`Error: ${error.message}`, 'error');
+    showProgress(0);
+  }
+}
 
 // ============================================
 // Helper Functions
@@ -385,8 +524,8 @@ async function processImages() {
     console.log('Process Images clicked!');
     
     // Validate that we have scan results
-    if (!window.scanResults || (!window.selectedDirectory && !window.lightroomMode)) {
-      alert('Please scan a directory or load files before processing images.');
+    if (!window.scanResults || !window.selectedDirectory) {
+      alert('Please scan a directory first before processing images.');
       return;
     }
 
@@ -529,6 +668,99 @@ if (window.electronAPI && window.electronAPI.onClipSetupProgress) {
   window.electronAPI.onClipSetupProgress((progressData) => {
     console.log('CLIP setup progress:', progressData);
     handleClipSetupProgress(progressData);
+  });
+}
+
+// ✅ LIGHTROOM HANDOFF: Listen for images sent from the Lightroom plugin
+if (window.electronAPI && window.electronAPI.onLightroomImagesLoaded) {
+  window.electronAPI.onLightroomImagesLoaded(async (data) => {
+    console.log('📸 Lightroom images received!', data);
+    const { imagePaths } = data;
+
+    if (!imagePaths || imagePaths.length === 0) {
+      console.warn('📸 No valid image paths from Lightroom');
+      return;
+    }
+
+    updateStatus(`Loading ${imagePaths.length} image(s) from Lightroom...`, 'processing');
+
+    try {
+      // Use the same pipeline as drag-and-drop files
+      const response = await window.electronAPI.scanFilesWithClustering(imagePaths, 5);
+      if (!response.success) {
+        updateStatus('Failed to load Lightroom images: ' + response.error, 'error');
+        return;
+      }
+
+      scanResults = response.results;
+      const summary = response.summary;
+      window.scanResults = scanResults;
+
+      // Set the selected directory to the parent of the first image
+      try {
+        const parent = await window.electronAPI.getParentDir(imagePaths[0]);
+        window.selectedDirectory = parent;
+      } catch {
+        window.selectedDirectory = null;
+      }
+
+      // Update the UI
+      updateStatus(`${imagePaths.length} image(s) loaded from Lightroom`, 'complete');
+      displayScanResults(summary);
+      populateResultsTableWithClusters(scanResults);
+
+      // Enable the process button
+      const processImagesBtn = document.getElementById('processImagesBtn');
+      if (processImagesBtn) {
+        processImagesBtn.disabled = false;
+      }
+
+      // ✅ Replace dropzone with thumbnail previews when Lightroom images arrive
+      const dropzoneEl = document.getElementById('dropzone');
+      if (dropzoneEl) {
+        dropzoneEl.innerHTML = '';
+        dropzoneEl.style.padding = '12px';
+        dropzoneEl.style.cursor = 'default';
+        dropzoneEl.style.borderStyle = 'solid';
+
+        const heading = document.createElement('h3');
+        heading.textContent = `${imagePaths.length} Image${imagePaths.length > 1 ? 's' : ''} from Lightroom`;
+        heading.style.cssText = 'margin-bottom: 12px; color: var(--text-primary); font-size: 14px; font-weight: 600;';
+        dropzoneEl.appendChild(heading);
+
+        const grid = document.createElement('div');
+        grid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px;';
+        dropzoneEl.appendChild(grid);
+
+        // Load a thumbnail for each image
+        for (const imgPath of imagePaths) {
+          const card = document.createElement('div');
+          card.style.cssText = 'background: var(--bg-base); border: 1px solid var(--border-color); border-radius: 3px; overflow: hidden; text-align: center;';
+
+          const img = document.createElement('img');
+          img.style.cssText = 'width: 100%; height: 100px; object-fit: cover; display: block; background: #1a1a1a;';
+          img.alt = imgPath.split('/').pop();
+          // Set a neutral placeholder while loading
+          img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="100" viewBox="0 0 120 100"><rect width="120" height="100" fill="#2a2a2a"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#666" font-size="11">Loading…</text></svg>');
+
+          const label = document.createElement('div');
+          label.textContent = imgPath.split('/').pop();
+          label.style.cssText = 'font-size: 10px; color: var(--text-secondary); padding: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
+
+          card.appendChild(img);
+          card.appendChild(label);
+          grid.appendChild(card);
+
+          // Load actual thumbnail asynchronously
+          loadThumbnail(imgPath, img);
+        }
+      }
+
+      console.log('📸 Lightroom images loaded successfully');
+    } catch (error) {
+      console.error('📸 Failed to process Lightroom images:', error);
+      updateStatus('Error loading Lightroom images: ' + error.message, 'error');
+    }
   });
 }
 
@@ -1012,20 +1244,6 @@ async function loadSettings() {
     const thresholdInput = document.getElementById('timestampThreshold');
     if (thresholdInput) {
       thresholdInput.value = settings.timestampThreshold || 5;
-      
-      // Add Auto-Save listener
-      if (!thresholdInput.dataset.listenerAttached) {
-        thresholdInput.addEventListener('change', async (e) => {
-          const val = parseInt(e.target.value, 10);
-          if (!isNaN(val)) {
-            await window.electronAPI.saveTimestampThreshold(val);
-            if (typeof showNotification === 'function') {
-              showNotification(`Bracket threshold saved: ${val} seconds`);
-            }
-          }
-        });
-        thresholdInput.dataset.listenerAttached = 'true';
-      }
     }
     
     // AI Analysis settings
@@ -1035,19 +1253,7 @@ async function loadSettings() {
     
     if (googleVisionApiKey) googleVisionApiKey.value = settings.googleVision?.apiKey || '';
     if (geminiTemperature) geminiTemperature.value = settings.aiAnalysis?.geminiTemperature ?? 0.3;
-    if (anchorContextInput) {
-      anchorContextInput.value = settings.aiAnalysis?.anchorContext || '';
-      
-      // Auto-save the Anchor Context when the user finishes typing
-      if (!anchorContextInput.dataset.listenerAttached) {
-        anchorContextInput.addEventListener('change', async (e) => {
-          const val = e.target.value;
-          await window.electronAPI.saveAISettings({ anchorContext: val || null });
-          console.log('✅ Anchor Context auto-saved:', val);
-        });
-        anchorContextInput.dataset.listenerAttached = 'true';
-      }
-    }
+    if (anchorContextInput) anchorContextInput.value = settings.aiAnalysis?.anchorContext || '';
     
     const enabledGeminiModels = settings.aiAnalysis?.enabledGeminiModels || [];
     const activeGeminiModel = settings.aiAnalysis?.activeGeminiModel || '';
@@ -1618,7 +1824,7 @@ async function createResultsTableRowFromGroup(group) {
   thumbnail.title = 'Click to preview';
   
   // Set placeholder first
-  thumbnail.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 24 24" fill="none" stroke="%236c757d" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+  thumbnail.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 24 24" fill="none" stroke="%23999999" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
   
   // Load actual thumbnail
   const thumbPath = cluster.representativePath || cluster.representative;
@@ -1710,14 +1916,14 @@ async function createResultsTableRowFromGroup(group) {
       // Thumbnail image for OTHER cluster representative
       const thumbnail = document.createElement('img');
       thumbnail.style.objectFit = 'cover';
-      thumbnail.style.borderRadius = '4px';
+      thumbnail.style.borderRadius = '3px';
       thumbnail.style.backgroundColor = '#e9ecef';
       thumbnail.style.border = '2px solid #0066cc';
       thumbnail.style.cursor = 'pointer';
       thumbnail.title = `${simRep.cluster.representativeFilename} - ${simRep.similarityPercent}% match`;
       
       // Placeholder
-      thumbnail.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="%236c757d" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+      thumbnail.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="%23999999" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
       
       // Load actual thumbnail of OTHER representative
       loadThumbnail(simRep.cluster.representativePath, thumbnail);
@@ -1830,7 +2036,7 @@ async function createResultsTableRowFromGroup(group) {
   addKeywordBtn.textContent = '+';
   addKeywordBtn.title = 'Add keyword';
   addKeywordBtn.style.padding = '4px 10px';
-  addKeywordBtn.style.backgroundColor = '#28a745';
+  addKeywordBtn.style.backgroundColor = 'var(--status-green)';
   addKeywordBtn.style.color = 'white';
   addKeywordBtn.style.border = 'none';
   addKeywordBtn.style.borderRadius = '3px';
@@ -2332,13 +2538,13 @@ async function createResultsTableRow(cluster) {
   thumbnail.style.width = '60px';
   thumbnail.style.height = '60px';
   thumbnail.style.objectFit = 'cover';
-  thumbnail.style.borderRadius = '4px';
+  thumbnail.style.borderRadius = '3px';
   thumbnail.style.flexShrink = '0';
   thumbnail.style.backgroundColor = '#e9ecef';
   thumbnail.title = 'Loading...';
   
   // Set placeholder first
-  thumbnail.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="%236c757d" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+  thumbnail.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="%23999999" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
   
   // Load actual thumbnail asynchronously
   // ✅ ADD: Fallback if representativePath is undefined
@@ -2404,14 +2610,14 @@ async function createResultsTableRow(cluster) {
       // Thumbnail image for OTHER cluster representative
       const thumbnail = document.createElement('img');
       thumbnail.style.objectFit = 'cover';
-      thumbnail.style.borderRadius = '4px';
+      thumbnail.style.borderRadius = '3px';
       thumbnail.style.backgroundColor = '#e9ecef';
       thumbnail.style.border = '2px solid #0066cc';
       thumbnail.style.cursor = 'pointer';
       thumbnail.title = `${sim.otherFileName} - ${sim.similarityPercent}% match`;
       
       // Placeholder
-      thumbnail.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="%236c757d" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+      thumbnail.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="%23999999" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
       
       // Load actual thumbnail of OTHER representative
       loadThumbnail(sim.otherRep, thumbnail);
@@ -2431,7 +2637,7 @@ async function createResultsTableRow(cluster) {
       scoreBadge.style.fontSize = '9px';
       scoreBadge.style.fontWeight = 'bold';
       scoreBadge.style.color = 'white';
-      scoreBadge.style.backgroundColor = sim.similarityPercent >= 95 ? '#28a745' : '#ffc107';
+      scoreBadge.style.backgroundColor = sim.similarityPercent >= 95 ? 'var(--status-green)' : 'var(--status-yellow)';
       scoreBadge.style.padding = '2px 6px';
       scoreBadge.style.borderRadius = '3px';
       scoreBadge.style.marginTop = '2px';
@@ -2540,7 +2746,7 @@ async function createBracketGroupRow(group) {
   thumbnail.style.cursor = 'pointer';
   
   // Placeholder
-  thumbnail.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 24 24" fill="none" stroke="%236c757d" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+  thumbnail.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 24 24" fill="none" stroke="%23999999" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
   
   if (representative) {
     loadThumbnail(representative.path, thumbnail);
@@ -2618,7 +2824,7 @@ async function createBracketGroupRow(group) {
     imageCard.style.gap = '6px';
     imageCard.style.padding = '8px';
     imageCard.style.background = '#f8f9fa';
-    imageCard.style.borderRadius = '6px';
+    imageCard.style.borderRadius = '3px';
     imageCard.style.border = '1px solid #dee2e6';
     
     // Thumbnail
@@ -2626,9 +2832,9 @@ async function createBracketGroupRow(group) {
     imgThumb.style.width = '100%';
     imgThumb.style.height = '100px';
     imgThumb.style.objectFit = 'cover';
-    imgThumb.style.borderRadius = '4px';
+    imgThumb.style.borderRadius = '3px';
     imgThumb.style.cursor = 'pointer';
-    imgThumb.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="%236c757d" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+    imgThumb.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="%23999999" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
     
     loadThumbnail(image.path, imgThumb);
     
@@ -2728,7 +2934,7 @@ async function createBracketGroupRow(group) {
   addKeywordBtn.textContent = '+';
   addKeywordBtn.title = 'Add keyword';
   addKeywordBtn.style.padding = '4px 10px';
-  addKeywordBtn.style.backgroundColor = '#28a745';
+  addKeywordBtn.style.backgroundColor = 'var(--status-green)';
   addKeywordBtn.style.color = 'white';
   addKeywordBtn.style.border = 'none';
   addKeywordBtn.style.borderRadius = '3px';
@@ -3019,7 +3225,7 @@ function getFileName(path) {
 // Helper: Get thumbnail path (placeholder for now)
 function getThumbnailPath(imagePath) {
   // This should use the existing thumbnail loading system
-  return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="%236c757d" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+  return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="%23999999" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
 }
 
 // Legacy renderSimilaritySection() and jumpToCluster() functions removed
@@ -3173,7 +3379,7 @@ function showNotification(message) {
 //       ${window.similarityResults.map(sim => `
 //         <div style="padding: 8px 12px; background: white; border: 1px solid #dee2e6; border-radius: 6px; font-size: 13px;">
 //           <strong>${sim.fileName1}</strong> ↔ <strong>${sim.fileName2}</strong><br>
-//           <span style="color: ${sim.similarityPercent >= 95 ? '#28a745' : sim.similarityPercent >= 90 ? '#ffc107' : '#0066cc'}; font-weight: bold;">
+//           <span style="color: ${sim.similarityPercent >= 95 ? 'var(--status-green)' : sim.similarityPercent >= 90 ? 'var(--status-yellow)' : '#0066cc'}; font-weight: bold;">
 //             ${sim.similarityPercent}% match
 //           </span>
 //         </div>
@@ -3536,14 +3742,14 @@ async function showMergeClusterModal(sourceGroup) {
     thumbWrapper.style.cursor = 'pointer';
     thumbWrapper.style.padding = '8px';
     thumbWrapper.style.border = '2px solid transparent';
-    thumbWrapper.style.borderRadius = '8px';
+    thumbWrapper.style.borderRadius = '3px';
     thumbWrapper.style.transition = 'all 0.2s ease';
     thumbWrapper.style.backgroundColor = 'white';
     thumbWrapper.dataset.groupIndex = index;
     
     thumbWrapper.onmouseenter = () => {
       if (thumbWrapper !== document.querySelector('.merge-target-selected')) {
-        thumbWrapper.style.borderColor = '#dee2e6';
+        thumbWrapper.style.borderColor = 'var(--border-color)';
         thumbWrapper.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
       }
     };
@@ -3580,13 +3786,13 @@ async function showMergeClusterModal(sourceGroup) {
     thumbnail.style.width = '100%';
     thumbnail.style.height = '120px';
     thumbnail.style.objectFit = 'cover';
-    thumbnail.style.borderRadius = '4px';
+    thumbnail.style.borderRadius = '3px';
     thumbnail.style.backgroundColor = '#e9ecef';
     thumbnail.alt = targetFileName;
     thumbnail.title = targetFileName;
     
     // Placeholder
-    thumbnail.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 24 24" fill="none" stroke="%236c757d" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+    thumbnail.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 24 24" fill="none" stroke="%23999999" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
     
     // Load actual thumbnail
     loadThumbnail(targetPath, thumbnail);
@@ -4017,7 +4223,7 @@ async function handleTestGoogleVision() {
     const response = await window.electronAPI.testGoogleVisionAPI(apiKey);
     
     if (response.success) {
-      statusDiv.style.color = '#28a745';
+      statusDiv.style.color = 'var(--status-green)';
       statusDiv.textContent = '✅ Google Vision API connection successful!';
     } else {
       statusDiv.style.color = '#e74c3c';
@@ -4052,7 +4258,7 @@ async function handleTestAiStudio() {
     statusDiv.textContent = '🔄 Testing AI Studio connection...';
     const response = await window.electronAPI.testAiStudio(apiKey);
     if (response.success) {
-      statusDiv.style.color = '#28a745';
+      statusDiv.style.color = 'var(--status-green)';
       statusDiv.textContent = '✅ AI Studio connection successful! Saving key...';
       // Persist the key so user doesn't need to re-enter it
       try {
@@ -4635,7 +4841,7 @@ async function makeCard(cluster, metadata, index) {
   const filename = cluster.mainRep?.representativeFilename || 'Unknown';
   const title = metadata?.title || 'Untitled';
   const description = metadata?.description || 'No description';
-  const caption = metadata?.caption || metadata?.description || 'No caption';
+  const caption = metadata?.caption || 'No caption';
   
   // ✅ Check GPS from multiple sources (including bracket images)
   let gps = cluster.mainRep?.gps || metadata?.gps || cluster.gps;
@@ -4726,84 +4932,7 @@ async function handleGenerateAllXMP() {
   const generateBtn = document.getElementById('generateAllXMPBtn');
   if (generateBtn) {
     generateBtn.disabled = true;
-    generateBtn.textContent = '⏳ Updating Lightroom...';
-  }
-
-  // LIGHTROOM ROUND-TRIP MODE
-  if (window.lightroomMode) {
-    console.log('🔄 Round-Trip detected: Writing back to Lightroom response.json');
-    const responseData = { images: [] };
-    
-    // Iterate through all super clusters that were analyzed
-    for (let i = 0; i < allClustersForAnalysis.length; i++) {
-      if (!analyzedClusters.has(i)) continue;
-      
-      const group = allClustersForAnalysis[i];
-      const metadata = analyzedClusters.get(i);
-      
-      // Map metadata to every single file path in this super cluster
-      const allPathsInSuperCluster = new Set();
-      
-      // 1. Add Main Rep and its bracketed images
-      if (group.mainRep?.representativePath) allPathsInSuperCluster.add(group.mainRep.representativePath);
-      if (group.mainRep?.imagePaths) {
-        group.mainRep.imagePaths.forEach(p => allPathsInSuperCluster.add(p));
-      }
-
-      // 2. Add Similar Reps and their bracketed images
-      if (group.similarReps) {
-        group.similarReps.forEach(sim => {
-          if (sim.cluster?.representativePath) allPathsInSuperCluster.add(sim.cluster.representativePath);
-          if (sim.cluster?.imagePaths) {
-            sim.cluster.imagePaths.forEach(p => allPathsInSuperCluster.add(p));
-          }
-        });
-      }
-      
-      // 3. Add all derivatives
-      if (group.derivatives) {
-        group.derivatives.forEach(p => allPathsInSuperCluster.add(p));
-      } else if (group.mainRep?.derivatives) {
-        group.mainRep.derivatives.forEach(p => allPathsInSuperCluster.add(p));
-      }
-
-      // Add each file to the response with its metadata
-      allPathsInSuperCluster.forEach(filePath => {
-          // Merge and deduplicate keywords from both UI editors
-          const combinedKeywords = [...new Set([
-            ...(metadata.keywords || []),
-            ...(group.mainRep?.keywords || [])
-          ])];
-
-          responseData.images.push({
-            path: filePath,
-            keywords: combinedKeywords,
-            title: metadata.title || '',
-            caption: metadata.caption || '',
-            description: metadata.description || '',
-            gpsLatitude: metadata.gps?.latitude || null,
-            gpsLongitude: metadata.gps?.longitude || null
-          });
-        });
-    }
-
-    try {
-      const result = await window.electronAPI.writeLightroomResponse(responseData);
-      if (result.success) {
-        console.log('✅ Lightroom response written. Closing window...');
-        window.close();
-      } else {
-        throw new Error(result.error);
-      }
-    } catch (error) {
-      console.error('❌ Failed to write Lightroom response:', error);
-      alert('Failed to return data to Lightroom: ' + error.message);
-      if (generateBtn) {
-        generateBtn.disabled = false;
-        generateBtn.textContent = '❌ Export Failed';
-      }
-    }
-    return;
+    generateBtn.textContent = '⏳ Generating XMP Files...';
   }
   
   let totalFilesCreated = 0;
@@ -4859,7 +4988,7 @@ async function handleGenerateAllXMP() {
     // Update button to show completion
     if (generateBtn) {
       generateBtn.disabled = false;
-      generateBtn.style.background = 'linear-gradient(135deg, #28a745 0%, #20c997 100%)';
+      generateBtn.style.background = 'var(--status-green)';
       generateBtn.innerHTML = `✅ ${totalFilesCreated} XMP files created`;
     }
     
@@ -5071,7 +5200,6 @@ function generateFallbackPrompt(clusterGroup) {
   
   prompt += `Please analyze this image and provide detailed metadata including:\n`;
   prompt += `- A descriptive title (be specific and engaging)\n`;
-  prompt += `- A short, engaging caption (1-2 sentences)\n`;
   prompt += `- Relevant keywords and tags (5-10 keywords)\n`;
   prompt += `- Location information if identifiable from the image\n`;
   prompt += `- Subject matter description (what you see in the image)\n`;
@@ -5080,11 +5208,9 @@ function generateFallbackPrompt(clusterGroup) {
   prompt += `Format your response as JSON with these exact fields:\n`;
   prompt += `{\n`;
   prompt += `  "title": "Descriptive title here",\n`;
-  prompt += `  "caption": "Short, engaging 1-2 sentence summary",\n`;
-  prompt += `  "description": "Detailed, literal description of what you see",\n`;
   prompt += `  "keywords": ["keyword1", "keyword2", "keyword3"],\n`;
   prompt += `  "location": "Location description or null",\n`;
-  prompt += `  "gps": {"latitude": 51.3895, "longitude": 30.0991},\n`;
+  prompt += `  "description": "Detailed description of what you see",\n`;
   prompt += `  "technicalDetails": "Technical observations or null",\n`;
   prompt += `  "confidence": 0.85\n`;
   prompt += `}\n\n`;

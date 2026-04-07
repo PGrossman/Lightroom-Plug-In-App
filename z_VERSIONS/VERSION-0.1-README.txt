@@ -1,0 +1,135 @@
+====================================
+LIGHTROOM META TAGGER - VERSION 0.1
+====================================
+
+Release Date: October 6, 2025
+Archive: Lightroom-Meta-Tagger-v0.1.zip
+Size: 122 KB
+
+====================================
+FEATURES INCLUDED
+====================================
+
+✅ CORE FUNCTIONALITY:
+- File detection and grouping (Canon RAW: CR2/CR3, RED TIF files)
+- Flexible base filename extraction (camera-agnostic pattern matching)
+- Derivative detection and matching (TIF, PSD, JPG from RAW)
+- Directory scanning with recursive file walking
+- Hidden file filtering (.DS_Store, __MACOSX, etc.)
+
+✅ INTELLIGENT CLUSTERING:
+- Timestamp-based bracketing for Canon files (5-second threshold)
+- Pattern-based bracketing for RED files (sequence numbering)
+- Dual clustering system (RED + Canon combined)
+- Middle-image selection as cluster representative
+
+✅ DATABASE INTEGRATION:
+- SQLite database for persistent storage (better-sqlite3)
+- 6-table schema (images, derivatives, clusters, cluster_members, analysis_results, processing_status)
+- Database location configuration
+- Statistics tracking
+
+✅ USER INTERFACE:
+- Modern tabbed interface (Ingest, Results, Settings)
+- Light theme with clean design
+- Drag & drop support (folders and files)
+- Pagination (10 rows per page)
+- Fixed table headers
+- Status panel with live statistics
+- GPS Data column (ready for GPS extraction)
+
+✅ SETTINGS MANAGEMENT:
+- JSON-based configuration (app-config.json)
+- Persistent user preferences
+- Database path selection and management
+- Database statistics display
+
+✅ TECHNICAL FEATURES:
+- Electron desktop application
+- IPC-based architecture with context isolation
+- exiftool CLI integration for EXIF extraction
+- Winston logger with debug/info/warn/error levels
+- Comprehensive error handling
+
+====================================
+TECHNICAL STACK
+====================================
+
+- Electron: Desktop application framework
+- Node.js: Backend runtime
+- better-sqlite3: Database engine
+- exiftool: EXIF metadata extraction
+- winston: Logging utility
+- Custom services: fileManager, clusteringService, timestampExtractor, databaseService, configManager
+
+====================================
+FILE STRUCTURE
+====================================
+
+src/
+├── main/
+│   ├── main.js          - Electron main process
+│   └── preload.js       - IPC bridge
+├── renderer/
+│   ├── index.html       - UI structure
+│   ├── styles.css       - Light theme styling
+│   └── app.js           - Frontend logic
+├── services/
+│   ├── fileManager.js           - File detection & grouping
+│   ├── clusteringService.js     - Timestamp-based clustering
+│   ├── timestampExtractor.js    - EXIF timestamp extraction
+│   ├── databaseService.js       - SQLite operations
+│   └── configManager.js         - Settings management
+└── utils/
+    └── logger.js        - Winston logging
+
+====================================
+KNOWN LIMITATIONS
+====================================
+
+- GPS extraction not yet implemented (UI ready)
+- No AI metadata generation yet (Ollama integration planned)
+- RED derivative TIF files missing EXIF timestamps (skipped during clustering)
+- No XMP file generation yet (Phase 3 planned)
+
+====================================
+INSTALLATION
+====================================
+
+1. Extract the zip file
+2. Run: npm install
+3. Run: npm run dev
+4. Ensure exiftool is installed: brew install exiftool
+
+====================================
+GITHUB REPOSITORY
+====================================
+
+https://github.com/PGrossman/Lightroom-Meta-Tagger.git
+
+Branch: main
+Commit: Initial commit (October 6, 2025)
+
+====================================
+NEXT STEPS (Future Versions)
+====================================
+
+Phase 2: AI Integration
+- Ollama vision model integration (qwen2.5vl:latest)
+- Image analysis and metadata generation
+- Keyword extraction
+
+Phase 3: XMP Generation
+- XMP file creation
+- Lightroom-compatible metadata
+- Batch processing
+
+Phase 4: Advanced Features
+- GPS coordinate extraction
+- Map visualization
+- Batch editing
+- Export presets
+
+====================================
+
+

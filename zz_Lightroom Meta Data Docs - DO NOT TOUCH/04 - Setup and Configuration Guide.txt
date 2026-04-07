@@ -1,0 +1,575 @@
+# Setup and Configuration Guide
+
+## Prerequisites
+
+### System Requirements
+- **OS**: macOS (tested on M4 Pro Mac Mini)
+- **RAM**: Minimum 16GB, recommended 64GB
+- **Storage**: 10GB free space (for temp files during processing)
+- **Node.js**: v18 or higher
+- **Ollama**: Latest version with vision model support
+
+### Required Software
+
+#### 1. Node.js and npm
+```bash
+# Check if installed
+node --version  # Should be v18+
+npm --version
+
+# Install if needed (using Homebrew)
+brew install node
+```
+
+#### 2. Ollama
+```bash
+# Install Ollama
+curl https://ollama.ai/install.sh | sh
+
+# Or via Homebrew
+brew install ollama
+
+# Start Ollama service
+ollama serve
+
+# Pull a vision model (in another terminal)
+ollama pull llava:latest
+# or for better performance
+ollama pull llava:13b
+# or
+ollama pull bakllava:latest
+```
+
+#### 3. Image Processing Tools
+```bash
+# Install exiftool (for RAW preview extraction)
+brew install exiftool
+
+# Install dcraw (for full RAW decoding - optional but recommended)
+brew install dcraw
+
+# Verify installations
+exiftool -ver
+dcraw
+```
+
+#### 4. Development Tools
+```bash
+# Install Electron globally (optional)
+npm install -g electron
+
+# Install nodemon for development (optional)
+npm install -g nodemon
+```
+
+## Project Setup
+
+### 1. Initialize Project
+
+Cursor will handle this, but for reference:
+
+```bash
+# Create project directory
+mkdir lightroom-xmp-generator
+cd lightroom-xmp-generator
+
+# Initialize npm
+npm init -y
+
+# Install Electron
+npm install electron --save-dev
+
+# Install core dependencies
+npm install sharp imghash hamming-distance axios @google-cloud/vision
+
+# Install development dependencies
+npm install --save-dev nodemon electron-builder
+
+# Install optional dependencies
+npm install winston electron-store dotenv
+```
+
+### 2. Project Structure
+
+```
+lightroom-xmp-generator/
+├── package.json
+├── config.json                 # Configuration file
+├── .env                        # Environment variables (API keys)
+├── .gitignore
+├── README.md
+├── docs/                       # Documentation (these files)
+│   ├── PROJECT_INSTRUCTIONS.md
+│   ├── TECHNICAL_ARCHITECTURE.md
+│   ├── IMPLEMENTATION_GUIDE.md
+│   ├── TROUBLESHOOTING.md
+│   └── SETUP_CONFIGURATION.md
+├── src/
+│   ├── main/
+│   │   ├── main.js            # Electron main process
+│   │   └── preload.js         # Preload script
+│   ├── renderer/
+│   │   ├── index.html
+│   │   ├── styles.css
+│   │   └── app.js
+│   ├── services/
+│   │   ├── fileManager.js
+│   │   ├── imageProcessor.js
+│   │   ├── similarityDetector.js
+│   │   ├── ollamaService.js
+│   │   ├── googleVisionService.js
+│   │   ├── xmpGenerator.js
+│   │   └── processingCoordinator.js
+│   ├── utils/
+│   │   ├── logger.js
+│   │   └── config.js
+│   └── config/
+│       └── default.json
+├── tests/
+│   ├── fileManager.test.js
+│   ├── imageProcessor.test.js
+│   └── similarityDetector.test.js
+├── test-images/               # Sample images for testing
+└── temp/                      # Temporary files (gitignored)
+```
+
+### 3. Package.json Configuration
+
+```json
+{
+  "name": "lightroom-xmp-generator",
+  "version": "1.0.0",
+  "description": "AI-powered XMP metadata generator for Lightroom",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "NODE_OPTIONS='--max-old-space-size=8192' electron .",
+    "dev": "NODE_ENV=development nodemon --exec electron .",
+    "test": "node --test tests/**/*.test.js",
+    "build": "electron-builder",
+    "build:mac": "electron-builder --mac"
+  },
+  "keywords": ["lightroom", "xmp", "metadata", "ai", "photography"],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0",
+    "nodemon": "^3.0.0"
+  },
+  "dependencies": {
+    "@google-cloud/vision": "^4.0.0",
+    "axios": "^1.6.0",
+    "electron-store": "^8.1.0",
+    "hamming-distance": "^1.0.0",
+    "imghash": "^0.1.8",
+    "sharp": "^0.33.0",
+    "winston": "^3.11.0",
+    "dotenv": "^16.3.1"
+  },
+  "build": {
+    "appId": "com.yourcompany.lightroom-xmp-generator",
+    "productName": "Lightroom XMP Generator",
+    "mac": {
+      "category": "public.app-category.photography",
+      "target": ["dmg", "zip"],
+      "arch": ["arm64"]
+    },
+    "files": [
+      "src/**/*",
+      "config.json",
+      "package.json"
+    ]
+  }
+}
+```
+
+## Configuration Files
+
+### 1. Main Configuration (config.json)
+
+```json
+{
+  "version": "1.0.0",
+  "ollama": {
+    "endpoint": "http://localhost:11434",
+    "model": "llava:latest",
+    "temperature": 0.1,
+    "confidenceThreshold": 0.95,
+    "timeout": 60000,
+    "retries": 3
+  },
+  "googleVision": {
+    "enabled": true,
+    "credentialsPath": "",
+    "features": [
+      "LABEL_DETECTION",
+      "OBJECT_LOCALIZATION",
+      "IMAGE_PROPERTIES"
+    ],
+    "maxResults": 20
+  },
+  "processing": {
+    "batchSize": 10,
+    "parallelWorkers": 4,
+    "jpgQuality": 90,
+    "maxImageSize": 2048,
+    "useEmbeddedPreview": true,
+    "cleanupTempFiles": true
+  },
+  "similarity": {
+    "enabled": true,
+    "hammingThreshold": 8,
+    "algorithm": "phash",
+    "hashSize": 16
+  },
+  "xmp": {
+    "applyToDerivatives": true,
+    "includeAnalysisDate": true,
+    "includeConfidence": false,
+    "includeAISource": true,
+    "customNamespace": ""
+  },
+  "ui": {
+    "theme": "system",
+    "showNotifications": true,
+    "autoStartProcessing": false
+  },
+  "paths": {
+    "tempDirectory": "./temp",
+    "logDirectory": "./logs",
+    "configBackup": "./config.backup.json"
+  },
+  "logging": {
+    "level": "info",
+    "maxFiles": 10,
+    "maxSize": "10m"
+  }
+}
+```
+
+### 2. Environment Variables (.env)
+
+```bash
+# Google Cloud credentials
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
+
+# Alternative: API Key (not recommended for production)
+GOOGLE_VISION_API_KEY=your_api_key_here
+
+# Ollama endpoint (if not default)
+OLLAMA_ENDPOINT=http://localhost:11434
+
+# Development settings
+NODE_ENV=development
+LOG_LEVEL=debug
+
+# Electron settings
+ELECTRON_ENABLE_LOGGING=true
+```
+
+### 3. Git Ignore (.gitignore)
+
+```
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+build/
+*.dmg
+*.zip
+
+# Temporary files
+temp/
+*.log
+logs/
+
+# Environment files
+.env
+.env.local
+
+# API credentials
+*service-account*.json
+credentials/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test outputs
+test-output/
+coverage/
+
+# Backups
+*.backup.*
+config.backup.json
+```
+
+## Google Cloud Setup
+
+### 1. Create Google Cloud Project
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create new project or select existing
+3. Note your Project ID
+
+### 2. Enable Vision API
+
+```bash
+# Using gcloud CLI
+gcloud services enable vision.googleapis.com
+
+# Or via Console:
+# 1. Navigate to "APIs & Services" > "Library"
+# 2. Search for "Cloud Vision API"
+# 3. Click "Enable"
+```
+
+### 3. Create Service Account
+
+```bash
+# Create service account
+gcloud iam service-accounts create lightroom-xmp-generator \
+    --display-name="Lightroom XMP Generator"
+
+# Grant Vision API permissions
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+    --member="serviceAccount:lightroom-xmp-generator@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+    --role="roles/cloudvision.user"
+
+# Create and download key
+gcloud iam service-accounts keys create ~/lightroom-vision-key.json \
+    --iam-account=lightroom-xmp-generator@YOUR_PROJECT_ID.iam.gserviceaccount.com
+```
+
+### 4. Configure in Application
+
+**Option A: Environment Variable**
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS="$HOME/lightroom-vision-key.json"
+```
+
+**Option B: Config File**
+```json
+{
+  "googleVision": {
+    "credentialsPath": "/Users/yourusername/lightroom-vision-key.json",
+    "enabled": true
+  }
+}
+```
+
+## Ollama Model Selection
+
+### Available Vision Models
+
+1. **LLaVA 7B** (Recommended for balance)
+```bash
+ollama pull llava:latest
+# Size: ~4GB
+# Speed: Fast
+# Accuracy: Good
+```
+
+2. **LLaVA 13B** (Best accuracy)
+```bash
+ollama pull llava:13b
+# Size: ~8GB
+# Speed: Medium
+# Accuracy: Excellent
+```
+
+3. **BakLLaVA** (Alternative)
+```bash
+ollama pull bakllava:latest
+# Size: ~4GB
+# Speed: Fast
+# Accuracy: Good
+```
+
+### Model Comparison
+
+| Model | Size | RAM Usage | Speed | Accuracy | Recommended |
+|-------|------|-----------|-------|----------|-------------|
+| llava:7b | 4GB | 6-8GB | Fast | Good | ✅ Yes |
+| llava:13b | 8GB | 12-16GB | Medium | Excellent | For 64GB RAM |
+| bakllava | 4GB | 6-8GB | Fast | Good | Alternative |
+
+### Testing Models
+
+```bash
+# Test a model with sample image
+ollama run llava:latest "Describe this image in detail" < test-image.jpg
+
+# Check loaded models
+ollama list
+
+# Remove unused models
+ollama rm llava:13b
+```
+
+## First Run Checklist
+
+### Before Starting Development
+
+- [ ] Node.js v18+ installed
+- [ ] Ollama installed and running (`ollama serve`)
+- [ ] Vision model downloaded (`ollama pull llava:latest`)
+- [ ] exiftool installed
+- [ ] dcraw installed (optional)
+- [ ] Google Cloud credentials configured (if using)
+- [ ] Test images ready in `test-images/` directory
+
+### Verification Script
+
+```javascript
+// scripts/verify-setup.js
+const axios = require('axios');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const fs = require('fs').promises;
+
+const execFileAsync = promisify(execFile);
+
+async function verifySetup() {
+  console.log('🔍 Verifying setup...\n');
+
+  // Check Node.js version
+  const nodeVersion = process.version;
+  console.log(`✓ Node.js version: ${nodeVersion}`);
+  if (parseInt(nodeVersion.slice(1)) < 18) {
+    console.error('✗ Node.js 18+ required!');
+  }
+
+  // Check Ollama
+  try {
+    const response = await axios.get('http://localhost:11434/api/tags');
+    console.log('✓ Ollama is running');
+    console.log(`  Models: ${response.data.models.map(m => m.name).join(', ')}`);
+  } catch (error) {
+    console.error('✗ Ollama not available. Run: ollama serve');
+  }
+
+  // Check exiftool
+  try {
+    const { stdout } = await execFileAsync('exiftool', ['-ver']);
+    console.log(`✓ exiftool version: ${stdout.trim()}`);
+  } catch (error) {
+    console.error('✗ exiftool not found. Run: brew install exiftool');
+  }
+
+  // Check dcraw
+  try {
+    await execFileAsync('dcraw');
+    console.log('✓ dcraw installed');
+  } catch (error) {
+    if (error.code === 1) {
+      console.log('✓ dcraw installed');
+    } else {
+      console.warn('⚠ dcraw not found (optional). Run: brew install dcraw');
+    }
+  }
+
+  // Check Google credentials
+  try {
+    const credsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    if (credsPath) {
+      await fs.access(credsPath);
+      console.log(`✓ Google credentials found: ${credsPath}`);
+    } else {
+      console.warn('⚠ Google credentials not configured (optional)');
+    }
+  } catch (error) {
+    console.warn('⚠ Google credentials file not accessible');
+  }
+
+  // Check test images
+  try {
+    const files = await fs.readdir('./test-images');
+    const rawFiles = files.filter(f => f.match(/\.(CR2|CR3)$/i));
+    console.log(`✓ Test images: ${rawFiles.length} RAW files found`);
+  } catch (error) {
+    console.warn('⚠ test-images directory not found');
+  }
+
+  console.log('\n✅ Setup verification complete!');
+}
+
+verifySetup().catch(console.error);
+```
+
+Run with:
+```bash
+node scripts/verify-setup.js
+```
+
+## Development Workflow
+
+### 1. Start Development Server
+
+```bash
+# Terminal 1: Start Ollama
+ollama serve
+
+# Terminal 2: Start application in dev mode
+npm run dev
+```
+
+### 2. Testing Individual Components
+
+```bash
+# Test file scanning
+node -e "
+const FM = require('./src/services/fileManager');
+const fm = new FM();
+fm.scanDirectory('./test-images').then(console.log);
+"
+
+# Test Ollama connection
+node -e "
+const axios = require('axios');
+axios.get('http://localhost:11434/api/tags').then(r => console.log(r.data));
+"
+```
+
+### 3. Build for Production
+
+```bash
+# Build macOS app
+npm run build:mac
+
+# Output will be in dist/
+```
+
+## Recommended Testing Dataset
+
+Create a test dataset with known characteristics:
+
+```
+test-images/
+├── bracketed/
+│   ├── _MG_0001.CR2  (exposure -2)
+│   ├── _MG_0002.CR2  (exposure 0)
+│   └── _MG_0003.CR2  (exposure +2)
+├── derivatives/
+│   ├── _MG_0100.CR2
+│   ├── _MG_0100-adj.tif
+│   └── _MG_0100-adj-Edit.tif
+├── landscapes/
+│   └── (various landscape photos)
+└── portraits/
+    └── (various portrait photos)
+```
+
+This will help verify:
+- Similarity detection groups bracketed shots
+- Derivative detection works correctly
+- Different scene types are classified appropriately

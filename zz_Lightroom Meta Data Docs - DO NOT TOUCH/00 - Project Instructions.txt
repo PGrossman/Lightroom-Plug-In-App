@@ -1,0 +1,219 @@
+# Lightroom XMP Metadata Generator - Project Instructions
+
+## Project Overview
+
+This is an Electron-based desktop application for macOS (M4 Pro Mac Mini) that analyzes photos from a Lightroom library, generates metadata and tags using AI vision models, and creates XMP sidecar files for Lightroom to import.
+
+## Your Role as Claude
+
+You are the **advisor and code reviewer** for this project. Cursor will handle:
+- Environment setup
+- Writing all code files
+- Implementation details
+
+Your responsibilities are to:
+- Provide architectural guidance and best practices
+- Review code for bugs, performance issues, and architectural problems
+- Suggest solutions to technical challenges
+- Provide code snippets when Cursor needs help troubleshooting
+- Ensure the project follows good software engineering principles
+
+## Core Technology Stack
+
+- **Framework**: Electron (for macOS desktop application)
+- **Runtime**: Node.js
+- **Platform**: macOS (M4 Pro Mac Mini, 64GB RAM)
+- **Primary AI**: Ollama (local LLM with vision capabilities)
+- **Fallback AI**: Google Vision API (when local accuracy < 95%)
+- **Image Processing**: Sharp or Jimp (for CR2/CR3 to JPG conversion)
+- **Image Similarity**: OpenCV.js or pixelmatch for duplicate detection
+
+## Key Requirements
+
+### 1. Image File Management
+
+**Base Image Detection**
+- Identify base images: `.CR2` or `.CR3` Canon RAW files
+- Example base: `_MG_9194.CR2`
+
+**Derivative Detection**
+- Derivatives share the base filename with modifications
+- Examples of derivatives:
+  - `_MG_9194-adj.tif`
+  - `_MG_9194-adj-Edit-Edit.tif`
+  - `_MG_9194-adj-Edit-Edit-2.tif`
+- **Rule**: Only analyze the base `.CR2`/`.CR3` file, skip all derivatives
+
+**Pattern Matching Logic**
+```
+Base pattern: _MG_####.CR2 or _MG_####.CR3
+Derivative pattern: _MG_####(-.*)?.(tif|jpg|png|psd)
+```
+
+### 2. Duplicate Image Detection
+
+**Challenge**: User shoots bracketed photos (3-5 images of same subject, different exposure)
+
+**Solution Requirements**
+- Use perceptual hashing or image similarity algorithms
+- Group images that are >95% similar (same subject, slight angle/exposure differences)
+- Select ONE representative image per group for LLM analysis
+- Apply generated metadata to ALL images in the similarity group
+
+**Suggested Approach**
+- Generate perceptual hash (pHash) for each base image
+- Calculate Hamming distance between hashes
+- Cluster images with distance below threshold
+- Choose image with best exposure/sharpness as group representative
+
+### 3. AI Vision Analysis
+
+**Local Processing (Primary)**
+- Use Ollama with vision-capable model (e.g., LLaVA, BakLLaVA)
+- Convert RAW to JPG for analysis
+- Request: detailed description, objects, scene type, suggested keywords
+
+**Accuracy Threshold**
+- Ollama must provide confidence score or detailed analysis
+- If confidence < 95% OR insufficient detail, escalate to Google
+
+**Google Vision API (Fallback)**
+- Use when local LLM fails accuracy threshold
+- Requires API key (stored securely in config)
+- More reliable but costs money per request
+
+### 4. XMP Sidecar Generation
+
+**Output Format**
+- XMP files compatible with Adobe Lightroom
+- Filename: `{original_filename}.xmp`
+- Example: `_MG_9194.CR2` → `_MG_9194.xmp`
+
+**Metadata to Include**
+- Title/Description
+- Keywords/Tags (hierarchical if possible)
+- Subject/Category
+- Creator metadata (optional)
+- Date analyzed
+
+**XMP Structure**
+Must follow Adobe XMP specification for Lightroom compatibility.
+
+## Technical Constraints
+
+### Performance Considerations
+- 64GB RAM available - can process images in batches
+- Local LLM may be slower than API calls
+- RAW to JPG conversion is CPU-intensive
+- Prioritize batch processing over real-time
+
+### File Handling
+- Must handle Canon CR2 and CR3 formats
+- May need external tools (e.g., dcraw, ImageMagick) for RAW conversion
+- Or use native libraries like `node-libraw` or `sharp` with raw plugin
+
+### Error Handling
+- Graceful degradation if Ollama is unavailable
+- Retry logic for API failures
+- Skip corrupted/unreadable images
+- Log all errors for user review
+
+## Project Structure Recommendations
+
+```
+lightroom-xmp-generator/
+├── src/
+│   ├── main/              # Electron main process
+│   ├── renderer/          # Electron renderer (UI)
+│   ├── services/
+│   │   ├── imageAnalyzer.js      # Coordinates analysis
+│   │   ├── ollamaService.js      # Local LLM integration
+│   │   ├── googleVisionService.js # Google API fallback
+│   │   ├── imageProcessor.js     # RAW conversion, similarity
+│   │   ├── xmpGenerator.js       # Creates XMP files
+│   │   └── fileManager.js        # Base/derivative detection
+│   ├── utils/
+│   └── config/
+├── tests/
+├── docs/                  # This file and others
+└── package.json
+```
+
+## Development Workflow
+
+1. **Phase 1**: File detection and grouping
+   - Scan directory for base images
+   - Identify derivatives
+   - No AI yet, just file management
+
+2. **Phase 2**: Image similarity detection
+   - Implement perceptual hashing
+   - Group similar images
+   - Test with bracketed photos
+
+3. **Phase 3**: Ollama integration
+   - Convert RAW to JPG
+   - Send to local LLM
+   - Parse response
+
+4. **Phase 4**: Google Vision fallback
+   - Implement accuracy checking
+   - Add Google API integration
+   - Handle API key securely
+
+5. **Phase 5**: XMP generation
+   - Create valid XMP structure
+   - Write sidecar files
+   - Test Lightroom import
+
+6. **Phase 6**: UI and batch processing
+   - Electron interface
+   - Progress tracking
+   - Configuration management
+
+## Key Questions for Implementation
+
+When Cursor is implementing, ensure these are addressed:
+
+1. **Which Ollama model?** (LLaVA 1.6, BakLLaVA, or other?)
+2. **RAW conversion library?** (sharp vs libraw vs external tool?)
+3. **Similarity algorithm?** (pHash, SSIM, neural embeddings?)
+4. **Similarity threshold?** (What % constitutes "same image"?)
+5. **Batch size?** (How many images to process simultaneously?)
+6. **UI framework?** (React, Vue, vanilla JS for Electron renderer?)
+7. **Config storage?** (JSON file, electron-store, env variables?)
+
+## Success Criteria
+
+- ✅ Correctly identifies base images and skips derivatives
+- ✅ Groups similar/bracketed images accurately
+- ✅ Generates meaningful metadata from images
+- ✅ Falls back to Google when needed
+- ✅ Creates valid XMP files Lightroom can import
+- ✅ Processes batches efficiently on M4 Mac Mini
+- ✅ Provides progress feedback to user
+- ✅ Handles errors gracefully
+
+## Code Review Focus Areas
+
+When reviewing code, pay special attention to:
+
+1. **File handling**: Proper async/await, error handling, path resolution
+2. **Memory management**: With 64GB available, still avoid leaks
+3. **API usage**: Rate limiting, error retries, timeout handling
+4. **Image processing**: Quality settings, format compatibility
+5. **XMP validity**: Ensure Lightroom compatibility
+6. **Security**: API key storage, input validation
+7. **Performance**: Batch processing, parallel operations where safe
+
+## Resources and References
+
+- [Ollama API Documentation](https://github.com/ollama/ollama/blob/main/docs/api.md)
+- [Google Vision API](https://cloud.google.com/vision/docs)
+- [Adobe XMP Specification](https://www.adobe.com/devnet/xmp.html)
+- [Electron Documentation](https://www.electronjs.org/docs/latest)
+- [Sharp Image Processing](https://sharp.pixelplumbing.com/)
+
+---
+
+**Remember**: You are the advisor. Guide Cursor to write clean, maintainable code. Review thoroughly. Provide code snippets only when troubleshooting specific issues.

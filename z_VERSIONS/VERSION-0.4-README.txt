@@ -1,0 +1,248 @@
+========================================
+LIGHTROOM META TAGGER - VERSION 0.4
+========================================
+Release Date: October 10, 2025
+Build: v0.4
+
+========================================
+MAJOR FEATURES IN VERSION 0.4
+========================================
+
+1. PERSONAL DATA TAB (NEW!)
+   ✅ Complete creator and copyright information management
+   ✅ IPTC-compliant metadata fields
+   ✅ Database storage for personal information
+   ✅ Dynamic XMP generation using personal data
+   
+   Fields Include:
+   - Creator Name*, Job Title
+   - Full Contact Info (address, city, state, postal code, country, phone, email*, website)
+   - Copyright Status, Copyright Notice*, Rights Usage Terms
+   - All fields embedded in XMP sidecars
+   
+   * = Required fields
+
+2. XMP GENERATOR - COMPLETE REWRITE
+   ✅ Dynamic personal data integration (no more hardcoded creator info)
+   ✅ Complete super cluster file collection
+   ✅ Generates XMP for ALL files:
+      - Main RAW representatives
+      - All bracketed images
+      - All TIF/PSD derivatives (edited files)
+      - All similar cluster files
+      - All similar cluster derivatives
+   ✅ IPTC-compliant creator contact info in XMP
+   ✅ Full metadata: creator, copyright, job title, contact info, rights terms
+
+3. IMPROVED AI KEYWORD GENERATION
+   ✅ Specific, technical keywords instead of generic/abstract ones
+   ✅ Equipment/model focus (F-18 Super Hornet vs "aircraft")
+   ✅ Location-specific (Golden Gate Bridge vs "bridge")
+   ✅ Action-focused (aerial refueling vs "teamwork")
+   ✅ Explicit ban list for abstract terms
+   ✅ Domain-specific rules (aviation, architecture, etc.)
+   
+   Before: precision, teamwork, aviation, military, aircraft
+   After: F-18 Super Hornet, Blue Angels, US Navy, delta formation, afterburner
+
+4. ENHANCED DERIVATIVE DETECTION
+   ✅ Improved TIF/PSD derivative identification
+   ✅ RED base file pattern exclusion
+   ✅ Proper handling of edited files (-Edit, -Pano, etc.)
+   ✅ All derivatives get XMP sidecars
+   
+   Examples:
+   ✅ A006_C001_0315GH_S000.0000127-Edit.tif → derivative
+   ✅ _GP_4599-Pano-Edit-Edit-Edit.psd → derivative
+   ❌ A006_C001_0315GH_S000.0000127.tif → base file (not derivative)
+
+5. UI IMPROVEMENTS
+   ✅ Simplified auto-save logic (no more confirmation dialogs)
+   ✅ Removed status badges from cluster thumbnails
+   ✅ Truncated long filenames with ellipsis
+   ✅ Fixed Visual Analysis tab column widths
+   ✅ Sticky table headers work properly
+   ✅ Clean, professional interface
+
+========================================
+TECHNICAL IMPROVEMENTS
+========================================
+
+DATABASE:
+- New personal_data table with IPTC-standard fields
+- Singleton pattern (ID=1) for personal info storage
+- Better-sqlite3 API usage (proper .prepare() pattern)
+- Derivatives properly tracked from ingest to XMP generation
+
+XMP METADATA:
+- Creator name, job title, copyright, rights terms
+- Full IPTC Creator Contact Info structure
+- All location fields (city, state, country, specific location)
+- Keywords, hashtags, alt text
+- Scene type, category, mood, subjects
+- Metadata and modify dates
+
+FILE HANDLING:
+- Robust Map/object format handling for derivatives
+- Type checking prevents runtime errors
+- Complete file collection in super clusters
+- No files missed during XMP generation
+
+AI ANALYSIS:
+- Enhanced prompt with keyword priority order
+- Good vs bad keyword examples
+- Domain-specific rules (military aviation, architecture)
+- Focus on VISIBLE, CONCRETE subjects
+- Better for professional photography catalogs
+
+========================================
+BUG FIXES
+========================================
+
+✅ Fixed keyword collection contamination between clusters
+✅ Fixed data loss in form fields during cluster switching
+✅ Fixed sticky headers on Results tab
+✅ Fixed auto-save blur timing issues
+✅ Fixed Visual Analysis table column alignment
+✅ Fixed derivatives.get() runtime errors
+✅ Fixed TIF derivative detection for RED files
+✅ Fixed database API usage (better-sqlite3 pattern)
+
+========================================
+FILE STRUCTURE
+========================================
+
+Key Files:
+- src/main/main.js - Main process, IPC handlers, XMP Generator initialization
+- src/renderer/app.js - Frontend logic, Personal Data functions
+- src/renderer/index.html - UI with Personal Data tab
+- src/services/xmpGenerator.js - Complete rewrite with database integration
+- src/services/databaseService.js - personal_data table
+- src/services/aiAnalysisService.js - Improved keyword prompt
+- src/services/fileManager.js - Enhanced derivative detection
+
+========================================
+HOW TO USE VERSION 0.4
+========================================
+
+1. SETUP PERSONAL DATA:
+   - Click "Personal Data" tab
+   - Fill in Creator Name*, Email*, Copyright Notice*
+   - Add optional contact info (address, phone, website, etc.)
+   - Click "Save Personal Data"
+
+2. INGEST IMAGES:
+   - Select folder with images
+   - Process images (RAW + TIF/PSD derivatives detected)
+   - Review clusters in Visual Analysis tab
+
+3. RUN AI ANALYSIS:
+   - Click "Run AI Analysis" on Visual Analysis tab
+   - AI generates specific, technical keywords
+   - Review and edit metadata in AI Analysis tab
+
+4. GENERATE XMP FILES:
+   - Edit metadata if needed
+   - Click "Generate XMP"
+   - XMP sidecars created for ALL files (RAW, bracketed, TIF edits, PSD files)
+   - Import to Lightroom!
+
+========================================
+SYSTEM REQUIREMENTS
+========================================
+
+- Node.js 18+ (includes better-sqlite3)
+- Electron 27+
+- ExifTool (for EXIF reading)
+- Sharp (for image processing)
+- Python 3.8+ (for CLIP similarity service)
+- Ollama (for AI analysis) - optional
+- Google Vision API key (fallback) - optional
+
+macOS: Monterey or later
+Windows: Windows 10/11
+Linux: Ubuntu 20.04+
+
+========================================
+INSTALLATION
+========================================
+
+1. Extract zip file
+2. Run: npm install
+3. Configure Ollama endpoint in Settings (if using Ollama)
+4. Set up Personal Data in Personal Data tab
+5. Run: npm start
+
+========================================
+KNOWN ISSUES
+========================================
+
+None reported in v0.4
+
+========================================
+CREDITS
+========================================
+
+Developer: Philip Ethan Grossman
+Built with: Electron, Node.js, better-sqlite3, Sharp, ExifTool
+AI Services: Ollama (Qwen2.5-VL), Google Vision API
+Image Analysis: CLIP (Python/FastAPI)
+
+========================================
+CHANGELOG FROM v0.3
+========================================
+
+NEW FEATURES:
++ Personal Data tab with IPTC-compliant fields
++ Dynamic XMP generation with personal data from database
++ Complete super cluster file collection (RAW + derivatives)
++ Improved AI keyword generation (specific/technical focus)
++ Enhanced derivative detection (TIF/PSD with RED exclusion)
+
+IMPROVEMENTS:
++ Better-sqlite3 API pattern usage
++ Robust Map/object format handling
++ Simplified auto-save logic
++ Truncated long filenames
++ Fixed column widths in tables
++ Cleaned up UI (removed status badges)
+
+BUG FIXES:
++ Keyword collection contamination
++ Data loss during cluster switching
++ Sticky headers alignment
++ Derivatives.get() errors
++ TIF derivative detection
++ Visual Analysis column widths
+
+========================================
+NEXT STEPS (v0.5)
+========================================
+
+Planned features:
+- Batch XMP generation for all clusters
+- Export metadata to CSV
+- Import metadata from CSV
+- Custom keyword templates
+- AI model selection in UI
+- Confidence threshold adjustment per cluster
+- Metadata presets/templates
+
+========================================
+SUPPORT
+========================================
+
+GitHub: https://github.com/PGrossman/Lightroom-Meta-Tagger
+Issues: https://github.com/PGrossman/Lightroom-Meta-Tagger/issues
+
+For questions or support, please open a GitHub issue.
+
+========================================
+LICENSE
+========================================
+
+See LICENSE file for details.
+
+========================================
+
+

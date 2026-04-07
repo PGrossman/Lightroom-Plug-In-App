@@ -1,0 +1,62 @@
+LIGHTROOM META TAGGER - VERSION 0.3
+=====================================
+
+RELEASE DATE: January 9, 2025
+
+MAJOR FIXES & IMPROVEMENTS:
+==========================
+
+1. FIXED DUPLICATE THUMBNAIL RENDERING ISSUE
+   - Resolved bug where AI Analysis tab showed 4 thumbnails instead of 2
+   - Root cause: loadClustersForAnalysis() was being called twice
+   - Fix: Removed duplicate tab click event listener
+   - Enhanced grid clearing with force removal of all children
+
+2. ENHANCED DEDUPLICATION LOGGING
+   - Added comprehensive debug logging to trace duplicate cluster sources
+   - Improved batchAnalyzeAllClusters() with detailed deduplication reporting
+   - Enhanced renderClusterThumbnailGrid() with call tracking and debugging
+
+3. IMPROVED ERROR HANDLING & DEBUGGING
+   - Added extensive console logging throughout the application
+   - Better error tracking for similarity detection and clustering
+   - Enhanced debugging for thumbnail rendering and grid management
+
+TECHNICAL DETAILS:
+=================
+
+Files Modified:
+- src/renderer/app.js: Fixed duplicate rendering, enhanced logging
+- Debug logging added to multiple functions for better troubleshooting
+
+Key Functions Enhanced:
+- renderClusterThumbnailGrid(): Force clear grid, added call tracking
+- batchAnalyzeAllClusters(): Enhanced deduplication logging
+- loadClustersForAnalysis(): Removed duplicate event listener
+
+Bug Fixes:
+- Fixed duplicate thumbnail rendering in AI Analysis tab
+- Resolved issue where 2 clusters were displayed as 4 thumbnails
+- Improved grid clearing mechanism to prevent accumulation
+
+KNOWN ISSUES:
+============
+- None at this time
+
+TESTING STATUS:
+==============
+✅ Duplicate thumbnail rendering - FIXED
+✅ AI Analysis tab functionality - WORKING
+✅ Cluster deduplication - WORKING
+✅ Batch analysis workflow - WORKING
+✅ Grid rendering - WORKING
+
+INSTALLATION:
+============
+1. Extract Lightroom-Meta-Tagger-v0.3.zip
+2. Run: npm install
+3. Run: npm start
+
+This version represents a significant stability improvement with the resolution
+of the duplicate rendering issue that was affecting the AI Analysis workflow.
+

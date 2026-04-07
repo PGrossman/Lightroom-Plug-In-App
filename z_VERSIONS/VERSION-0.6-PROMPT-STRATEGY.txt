@@ -1,0 +1,616 @@
+========================================
+LIGHTROOM META TAGGER - VERSION 0.6
+========================================
+Release Date: October 13, 2025
+Build: v0.6 - DUAL PROMPT STRATEGY IMPLEMENTATION
+
+========================================
+NEW FEATURE: BALANCED PROMPT STRATEGY
+========================================
+
+🎯 **VLM TESTER INTEGRATION**
+
+This release integrates proven prompt engineering strategies from the VLM Tester project,
+providing TWO prompt strategies for AI analysis:
+
+1. **ORIGINAL** - Context-first, keyword-prioritized (existing prompt from v0.5)
+2. **BALANCED** - Visual priority + structured output (new, proven strategy)
+
+========================================
+WHAT'S NEW IN v0.6
+========================================
+
+✅ **Dual Prompt Strategy System**
+   - Original prompt preserved for backward compatibility
+   - Balanced prompt added as new default
+   - Configurable via config.json
+   - No breaking changes
+
+✅ **Enhanced AI Analysis Output**
+   - Subject detection with confidence scoring
+   - GPS validation/prediction analysis
+   - Structured JSON output (no markdown)
+   - Realistic confidence ranges (60-90% typical)
+
+✅ **Better Metadata Quality**
+   - More specific technical keywords
+   - GPS-aware location validation
+   - Subject-focused descriptions
+   - Accessibility-first alt text
+
+✅ **Configuration Control**
+   - Set strategy in config.json
+   - Switch between strategies anytime
+   - Defaults to "balanced" for best results
+
+========================================
+IMPLEMENTATION DETAILS
+========================================
+
+### File Changes:
+
+**src/services/aiAnalysisService.js**
+- Line 8: Store config reference for strategy access
+- Line 22-23: Retrieve prompt strategy from config (default: 'balanced')
+- Line 145-150: New `buildPrompt()` method with strategy parameter
+- Line 157-249: Original prompt moved to `buildPromptOriginal()`
+- Line 255-340: New `buildPromptBalanced()` method
+- Line 27-33: Conditional enhanced prompt wrapper
+- Line 49: Log prompt strategy used
+
+**config.json**
+- Line 22: Added `"promptStrategy": "balanced"` to aiAnalysis section
+
+========================================
+PROMPT STRATEGY COMPARISON
+========================================
+
+### ORIGINAL STRATEGY (v0.5 and earlier)
+
+**When to use:**
+- You have rich folder/GPS context
+- Keywords are the primary focus
+- You want explicit keyword guidance
+- Backward compatibility needed
+
+**Strengths:**
++ Extensive keyword guidance
++ Ban lists for generic terms
++ Domain-specific rules (aviation, etc.)
++ Folder keyword integration
+
+**Weaknesses:**
+- Very verbose prompt
+- May bias AI toward context over visuals
+- Complex JSON format
+
+**Output format:**
+```json
+{
+  "confidence": 85,
+  "uncertainFields": [],
+  "title": "...",
+  "description": "...",
+  "keywords": [...],
+  "category": "...",
+  "sceneType": "...",
+  "location": {...},
+  "mood": "...",
+  "subjects": [...],
+  "hashtags": [...],
+  "altText": "..."
+}
+```
+
+---
+
+### BALANCED STRATEGY (v0.6 default)
+
+**When to use:**
+- Visual content is primary
+- GPS validation needed
+- You want structured analysis
+- Best overall results
+
+**Strengths:**
++ Visual analysis prioritized
++ GPS validation with reasoning
++ Subject detection with confidence
++ Cleaner, more focused prompt
++ Proven in VLM Tester project
+
+**Weaknesses:**
+- Less keyword-specific guidance
+- May need context adjustments
+
+**Output format:**
+```json
+{
+  "subjectDetection": {
+    "subject": "Primary subject",
+    "confidence": 85
+  },
+  "title": "...",
+  "description": "...",
+  "keywords": [...],
+  "category": "...",
+  "mood": "...",
+  "sceneType": "...",
+  "location": {...},
+  "gpsAnalysis": {
+    "validation": "AGREE or DISAGREE",
+    "validationReasoning": "...",
+    "latitude": 37.7749,
+    "longitude": -122.4194
+  },
+  "caption": "...",
+  "hashtags": [...],
+  "altText": "...",
+  "confidence": 85,
+  "uncertainFields": []
+}
+```
+
+========================================
+CONFIGURATION GUIDE
+========================================
+
+### Use Balanced Strategy (Default)
+
+In `config.json`:
+```json
+{
+  "aiAnalysis": {
+    "promptStrategy": "balanced"
+  }
+}
+```
+
+### Use Original Strategy (Legacy)
+
+In `config.json`:
+```json
+{
+  "aiAnalysis": {
+    "promptStrategy": "original"
+  }
+}
+```
+
+### Switch Strategies
+
+1. Edit `config.json`
+2. Change `"promptStrategy"` value
+3. Restart application
+4. All new analyses use selected strategy
+
+**Note:** Existing analyzed clusters are NOT affected.
+Only NEW analyses use the configured strategy.
+
+========================================
+BALANCED STRATEGY HIGHLIGHTS
+========================================
+
+### 1. Subject Detection First
+```
+1. **Subject Detection**
+   - Identify the primary subject in the image
+   - Provide confidence score (0-100%) for subject identification
+```
+
+**Benefits:**
+- AI focuses on what's actually IN the image
+- Confidence score specific to subject identification
+- Reduces hallucination/speculation
+
+---
+
+### 2. GPS Validation (if GPS available)
+```
+GPS validation: Does the image match GPS coordinates 
+37.7749, -122.4194? (AGREE/DISAGREE with reasoning)
+```
+
+**Example Output:**
+```json
+"gpsAnalysis": {
+  "validation": "AGREE",
+  "validationReasoning": "Image shows Golden Gate Bridge and 
+    San Francisco Bay, consistent with coordinates in SF area",
+  "latitude": 37.7749,
+  "longitude": -122.4194
+}
+```
+
+**Benefits:**
+- Validates GPS accuracy against visual content
+- Provides reasoning for validation
+- Catches GPS errors (e.g., wrong location tag)
+
+---
+
+### 3. GPS Prediction (if no GPS)
+```
+GPS prediction: Estimate coordinates based on visual content (if possible)
+```
+
+**Example Output:**
+```json
+"gpsAnalysis": {
+  "latitude": null,
+  "longitude": null,
+  "predictionConfidence": 0,
+  "predictionReasoning": "Cannot determine location from visual content"
+}
+```
+
+**Benefits:**
+- AI can suggest location if identifiable landmarks present
+- Honest about inability to determine location
+- No false predictions
+
+---
+
+### 4. Realistic Confidence Ranges
+```
+CRITICAL REQUIREMENTS:
+- Subject confidence must be realistic (60-90% typical range, 
+  100% only if absolutely certain)
+```
+
+**Before (v0.5):**
+- AI often returned 95-100% confidence
+- Overconfident predictions
+- Less useful for filtering
+
+**After (v0.6 Balanced):**
+- AI returns 60-90% for typical analysis
+- 100% only for absolute certainty
+- More realistic uncertainty tracking
+
+---
+
+### 5. Cleaner JSON Output
+```
+RESPONSE FORMAT (JSON only, no markdown):
+{...}
+
+DO NOT include markdown code blocks, explanations, 
+or any text outside the JSON object.
+```
+
+**Benefits:**
+- No ```json wrappers to strip
+- Faster parsing
+- More reliable extraction
+
+========================================
+TESTING RESULTS
+========================================
+
+### Balanced Strategy Performance (VLM Tester Findings)
+
+✅ **Better Subject Detection**
+   - Focuses on visual content first
+   - Less influenced by folder names
+   - More accurate primary subject identification
+
+✅ **GPS Validation Works**
+   - Successfully validates GPS coordinates
+   - Provides detailed reasoning
+   - Catches location mismatches
+
+✅ **More Specific Keywords**
+   - Technical terms prioritized
+   - Less generic/abstract keywords
+   - Subject-focused vocabulary
+
+✅ **Realistic Confidence**
+   - 60-90% range for typical images
+   - Honest uncertainty tracking
+   - Better filtering by confidence
+
+✅ **Structured Output**
+   - Consistent JSON format
+   - No markdown cleanup needed
+   - Easier parsing/validation
+
+### Example Comparison
+
+**Image:** F-18 Super Hornet in formation
+
+**Original Strategy Keywords:**
+```json
+[
+  "F-18 Super Hornet",
+  "Blue Angels",
+  "precision",        // ❌ Abstract
+  "teamwork",         // ❌ Generic
+  "military aviation",
+  "formation flight",
+  "excellence"        // ❌ Generic
+]
+```
+
+**Balanced Strategy Keywords:**
+```json
+[
+  "F-18 Super Hornet",
+  "Blue Angels",
+  "US Navy",
+  "delta formation",   // ✅ Specific
+  "afterburner",       // ✅ Technical
+  "smoke trails",      // ✅ Visual
+  "air show"           // ✅ Event type
+]
+```
+
+========================================
+MIGRATION GUIDE
+========================================
+
+### From v0.5 to v0.6
+
+**No migration required!**
+
+✅ Existing analyzed metadata unchanged
+✅ Original prompt still available
+✅ Switch strategies anytime
+✅ Drop-in replacement
+
+**Steps:**
+1. Extract v0.6 over v0.5
+2. Config.json updated automatically
+3. Restart application
+4. New analyses use balanced strategy
+
+**To keep original behavior:**
+1. Edit config.json
+2. Change `"promptStrategy": "balanced"` to `"promptStrategy": "original"`
+3. Restart application
+
+========================================
+TECHNICAL ARCHITECTURE
+========================================
+
+### Class: AIAnalysisService
+
+**New Properties:**
+- `this.config` - Stores full config for strategy access
+
+**New Methods:**
+- `buildPrompt(context, strategy)` - Router method
+- `buildPromptOriginal(context)` - v0.5 prompt
+- `buildPromptBalanced(context)` - v0.6 VLM Tester prompt
+
+**Modified Methods:**
+- `analyzeWithOllama()` - Reads strategy from config
+- `constructor()` - Stores config reference
+
+**Flow:**
+```
+analyzeWithOllama()
+  ↓
+Read promptStrategy from config (default: 'balanced')
+  ↓
+buildPrompt(context, strategy)
+  ↓
+  ├─ strategy === 'original' → buildPromptOriginal()
+  └─ strategy === 'balanced' → buildPromptBalanced()
+  ↓
+ollamaService.analyzeImageWithVision(image, prompt)
+  ↓
+Parse JSON response
+  ↓
+Validate confidence (60-100%)
+  ↓
+Return metadata with provider/model info
+```
+
+========================================
+DEBUGGING & TROUBLESHOOTING
+========================================
+
+### How to check which strategy is being used:
+
+**Check app.log:**
+```
+[INFO] Ollama analysis complete {
+  confidence: 82,
+  uncertainFields: [],
+  strategy: 'balanced'   <-- LOOK HERE
+}
+```
+
+**If strategy is not logged:**
+- You're running v0.5 or earlier
+- Upgrade to v0.6
+
+### Common Issues:
+
+**Issue 1: AI returning markdown blocks**
+```json
+```json
+{
+  "title": "..."
+}
+```
+```
+
+**Solution:** You're using original strategy
+- Switch to balanced: `"promptStrategy": "balanced"`
+- Balanced explicitly forbids markdown
+
+---
+
+**Issue 2: Confidence always 95-100%**
+
+**Solution:** You're using original strategy
+- Switch to balanced: `"promptStrategy": "balanced"`
+- Balanced enforces realistic confidence (60-90%)
+
+---
+
+**Issue 3: No GPS validation in output**
+
+**Solution:** Check strategy and image GPS
+- Balanced strategy includes GPS validation
+- Only if image has GPS coordinates
+- Check `gpsAnalysis` field in response
+
+---
+
+**Issue 4: Keywords too generic**
+
+**Solution:** Try balanced strategy
+- Balanced focuses on visual/technical terms
+- Original may be influenced by folder context
+- Switch: `"promptStrategy": "balanced"`
+
+========================================
+PERFORMANCE IMPACT
+========================================
+
+**Prompt Length:**
+- Original: ~2,200 characters
+- Balanced: ~1,400 characters
+- **36% shorter = faster processing**
+
+**API Tokens:**
+- Balanced uses fewer input tokens
+- Faster response times
+- Lower API costs (if using paid APIs)
+
+**Output Parsing:**
+- Balanced: No markdown stripping needed
+- Original: May need cleanup
+- **Faster, more reliable parsing**
+
+**Quality:**
+- Balanced: More focused on visuals
+- Original: More context-aware
+- **Both produce high-quality results**
+
+========================================
+FUTURE ENHANCEMENTS (v0.7+)
+========================================
+
+Planned improvements:
+- **Strategy auto-selection** based on available context
+- **Hybrid strategy** combining best of both
+- **Custom prompt templates** for specific domains
+- **A/B testing framework** to compare strategies
+- **Prompt optimization** based on model performance
+- **Multi-model support** with strategy per model
+
+========================================
+CHANGELOG v0.5 → v0.6
+========================================
+
+NEW FEATURES:
++ Dual prompt strategy system (original + balanced)
++ Balanced strategy from VLM Tester project
++ GPS validation with reasoning
++ Subject detection with confidence
++ Configurable strategy selection
++ Realistic confidence ranges (60-90%)
+
+IMPROVEMENTS:
++ 36% shorter prompts (balanced)
++ Faster parsing (no markdown)
++ More specific keywords
++ Better subject focus
++ Enhanced GPS awareness
+
+TECHNICAL:
++ Store config reference in AIAnalysisService
++ New buildPrompt() router method
++ New buildPromptOriginal() method
++ New buildPromptBalanced() method
++ Strategy logging in output
++ Config.json promptStrategy setting
+
+BUG FIXES:
++ None (feature-only release)
+
+BACKWARD COMPATIBILITY:
+✅ Original prompt still available
+✅ No breaking changes
+✅ Existing metadata unchanged
+✅ Drop-in replacement
+
+========================================
+VERSION HISTORY
+========================================
+
+v0.1 (Initial Release):
+- Basic ingest and processing
+- Timestamp-based clustering
+- EXIF extraction
+
+v0.2 (Visual Analysis):
+- CLIP similarity detection
+- Visual clustering
+- Pagination
+
+v0.3 (AI Analysis):
+- Ollama/Google Vision integration
+- AI metadata generation
+- XMP file creation
+
+v0.4 (Personal Data):
+- Personal Data tab
+- Dynamic XMP with creator info
+- Improved AI keywords
+- Enhanced derivative detection
+
+v0.5 (Bug Fixes):
+- Fixed derivatives not included in XMP
+- Fixed better-sqlite3 API usage
+- Enhanced debug logging
+- Improved derivative detection
+- Fixed table column widths
+
+v0.6 (Prompt Strategy): ← CURRENT
+- Dual prompt strategy system
+- Balanced prompt from VLM Tester
+- GPS validation/prediction
+- Subject detection
+- Configurable strategy
+- Realistic confidence ranges
+
+========================================
+CREDITS
+========================================
+
+Developer: Philip Ethan Grossman
+Balanced Prompt Strategy: Based on VLM Tester project findings
+Built with: Electron, Node.js, better-sqlite3, Sharp, ExifTool
+AI Services: Ollama (Qwen2.5-VL), Google Vision API
+Image Analysis: CLIP (Python/FastAPI)
+
+Special thanks to the VLM Tester project for validating 
+the balanced prompt strategy!
+
+========================================
+SUPPORT
+========================================
+
+GitHub: https://github.com/PGrossman/Lightroom-Meta-Tagger
+Issues: https://github.com/PGrossman/Lightroom-Meta-Tagger/issues
+
+For bug reports, please include:
+1. Version number (v0.6)
+2. Prompt strategy used (check app.log)
+3. Relevant log excerpts
+4. Steps to reproduce
+5. Expected vs actual behavior
+
+========================================
+LICENSE
+========================================
+
+See LICENSE file for details.
+
+========================================
+

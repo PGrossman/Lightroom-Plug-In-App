@@ -1,0 +1,1055 @@
+# Implementation Guide - Code Examples and Patterns
+
+## File Organization Best Practices
+
+### Service Module Pattern
+
+Each service should be a class with clear responsibilities:
+
+```javascript
+// src/services/baseService.js
+class BaseService {
+  constructor(config) {
+    this.config = config;
+    this.logger = require('./logger');
+  }
+
+  async initialize() {
+    // Setup logic
+  }
+
+  async shutdown() {
+    // Cleanup logic
+  }
+}
+
+module.exports = BaseService;
+```
+
+## Critical Code Examples
+
+### 1. Base Image Detection
+
+```javascript
+// src/services/fileManager.js
+const path = require('path');
+const fs = require('fs').promises;
+
+class FileManager {
+  constructor() {
+    this.baseExtensions = ['.CR2', '.CR3'];
+    this.derivativeExtensions = ['.tif', '.tiff', '.jpg', '.jpeg', '.png', '.psd'];
+  }
+
+  /**
+   * Extract base filename from any image
+   * _MG_9194.CR2 → _MG_9194
+   * _MG_9194-adj.tif → _MG_9194
+   */
+  getBaseFilename(filename) {
+    const nameWithoutExt = path.parse(filename).name;
+    // Split on hyphen and take first part
+    const baseName = nameWithoutExt.split('-')[0];
+    return baseName;
+  }
+
+  /**
+   * Check if file is a base image
+   */
+  isBaseImage(filename) {
+    const ext = path.extname(filename).toUpperCase();
+    return this.baseExtensions.includes(ext);
+  }
+
+  /**
+   * Find all derivatives for a base image
+   */
+  async findDerivatives(basePath, allFiles) {
+    const baseFilename = this.getBaseFilename(path.basename(basePath));
+    const baseDir = path.dirname(basePath);
+    
+    const derivatives = [];
+    
+    for (const file of allFiles) {
+      if (file === basePath) continue;
+      
+      const fileBase = this.getBaseFilename(path.basename(file));
+      const fileExt = path.extname(file).toLowerCase();
+      
+      // Same base name but different extension or has modifications
+      if (fileBase === baseFilename && 
+          this.derivativeExtensions.includes(fileExt)) {
+        derivatives.push(file);
+      }
+    }
+    
+    return derivatives;
+  }
+
+  /**
+   * Scan directory and build file tree
+   */
+  async scanDirectory(dirPath) {
+    const results = {
+      baseImages: [],
+      derivatives: new Map(), // baseImage → [derivatives]
+    };
+
+    async function* walk(dir) {
+      const files = await fs.readdir(dir, { withFileTypes: true });
+      for (const file of files) {
+        const fullPath = path.join(dir, file.name);
+        if (file.isDirectory()) {
+          yield* walk(fullPath);
+        } else {
+          yield fullPath;
+        }
+      }
+    }
+
+    // Collect all files first
+    const allFiles = [];
+    for await (const file of walk(dirPath)) {
+      allFiles.push(file);
+    }
+
+    // Identify base images
+    for (const file of allFiles) {
+      if (this.isBaseImage(file)) {
+        results.baseImages.push(file);
+      }
+    }
+
+    // Find derivatives for each base
+    for (const baseImage of results.baseImages) {
+      const derivs = await this.findDerivatives(baseImage, allFiles);
+      results.derivatives.set(baseImage, derivs);
+    }
+
+    return results;
+  }
+}
+
+module.exports = FileManager;
+```
+
+### 2. RAW to JPG Conversion
+
+```javascript
+// src/services/imageProcessor.js
+const sharp = require('sharp');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const fs = require('fs').promises;
+const path = require('path');
+
+const execFileAsync = promisify(execFile);
+
+class ImageProcessor {
+  constructor(config) {
+    this.config = config;
+    this.tempDir = path.join(process.cwd(), 'temp');
+  }
+
+  async initialize() {
+    // Ensure temp directory exists
+    await fs.mkdir(this.tempDir, { recursive: true });
+  }
+
+  /**
+   * Extract embedded preview from RAW (fast method)
+   */
+  async extractPreview(rawPath) {
+    try {
+      // Use exiftool to extract preview
+      const { stdout } = await execFileAsync('exiftool', [
+        '-b',
+        '-PreviewImage',
+        rawPath
+      ]);
+      
+      if (stdout && stdout.length > 0) {
+        const previewPath = path.join(
+          this.tempDir, 
+          `${path.basename(rawPath, path.extname(rawPath))}_preview.jpg`
+        );
+        await fs.writeFile(previewPath, stdout);
+        return previewPath;
+      }
+    } catch (error) {
+      console.warn('Preview extraction failed:', error.message);
+    }
+    
+    return null;
+  }
+
+  /**
+   * Convert RAW to JPG (fallback to full decode)
+   */
+  async rawToJpg(rawPath, options = {}) {
+    const {
+      maxSize = 2048,
+      quality = 90,
+      usePreview = true
+    } = options;
+
+    // Try fast preview extraction first
+    if (usePreview) {
+      const previewPath = await this.extractPreview(rawPath);
+      if (previewPath) {
+        // Resize preview if needed
+        return this.resizeImage(previewPath, maxSize, quality);
+      }
+    }
+
+    // Fallback: full RAW decode with dcraw or similar
+    // This is slower but works when preview unavailable
+    const outputPath = path.join(
+      this.tempDir,
+      `${path.basename(rawPath, path.extname(rawPath))}.jpg`
+    );
+
+    try {
+      // Use dcraw for full decode
+      await execFileAsync('dcraw', [
+        '-c',           // Write to stdout
+        '-w',           // Use camera white balance
+        '-q', '3',      // High quality
+        rawPath
+      ]);
+
+      // dcraw outputs PPM, convert with sharp
+      // (This is a simplified example)
+      await sharp(rawPath)
+        .resize(maxSize, maxSize, { 
+          fit: 'inside',
+          withoutEnlargement: true 
+        })
+        .jpeg({ quality })
+        .toFile(outputPath);
+
+      return outputPath;
+    } catch (error) {
+      throw new Error(`RAW conversion failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Resize and optimize an image
+   */
+  async resizeImage(imagePath, maxSize, quality) {
+    const outputPath = path.join(
+      this.tempDir,
+      `${path.basename(imagePath, path.extname(imagePath))}_resized.jpg`
+    );
+
+    await sharp(imagePath)
+      .resize(maxSize, maxSize, {
+        fit: 'inside',
+        withoutEnlargement: true
+      })
+      .jpeg({ quality })
+      .toFile(outputPath);
+
+    return outputPath;
+  }
+
+  /**
+   * Cleanup temporary files
+   */
+  async cleanup() {
+    try {
+      const files = await fs.readdir(this.tempDir);
+      await Promise.all(
+        files.map(file => fs.unlink(path.join(this.tempDir, file)))
+      );
+    } catch (error) {
+      console.error('Cleanup failed:', error);
+    }
+  }
+}
+
+module.exports = ImageProcessor;
+```
+
+### 3. Perceptual Hash and Similarity Detection
+
+```javascript
+// src/services/similarityDetector.js
+const imghash = require('imghash');
+const hammingDistance = require('hamming-distance');
+
+class SimilarityDetector {
+  constructor(config) {
+    this.hammingThreshold = config.similarity.hammingThreshold || 8;
+  }
+
+  /**
+   * Generate perceptual hash for an image
+   */
+  async generateHash(imagePath) {
+    try {
+      const hash = await imghash.hash(imagePath, 16); // 16-bit hash
+      return hash;
+    } catch (error) {
+      throw new Error(`Hash generation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Calculate similarity between two hashes
+   * Returns Hamming distance (0 = identical, higher = more different)
+   */
+  calculateDistance(hash1, hash2) {
+    return hammingDistance(hash1, hash2);
+  }
+
+  /**
+   * Cluster similar images using pHash
+   */
+  async clusterSimilarImages(images) {
+    // Generate hashes for all images
+    const imageData = await Promise.all(
+      images.map(async (imagePath) => ({
+        path: imagePath,
+        hash: await this.generateHash(imagePath)
+      }))
+    );
+
+    // Build clusters using Union-Find or simple grouping
+    const clusters = [];
+    const processed = new Set();
+
+    for (let i = 0; i < imageData.length; i++) {
+      if (processed.has(i)) continue;
+
+      const cluster = [imageData[i]];
+      processed.add(i);
+
+      // Find all similar images
+      for (let j = i + 1; j < imageData.length; j++) {
+        if (processed.has(j)) continue;
+
+        const distance = this.calculateDistance(
+          imageData[i].hash,
+          imageData[j].hash
+        );
+
+        if (distance <= this.hammingThreshold) {
+          cluster.push(imageData[j]);
+          processed.add(j);
+        }
+      }
+
+      clusters.push(cluster);
+    }
+
+    return clusters;
+  }
+
+  /**
+   * Select representative image from cluster
+   * Based on image quality metrics
+   */
+  async selectRepresentative(cluster) {
+    // For now, select first image
+    // TODO: Implement quality scoring (sharpness, exposure, etc.)
+    
+    if (cluster.length === 0) return null;
+    if (cluster.length === 1) return cluster[0].path;
+
+    // Could add quality assessment here
+    // For example: check image sharpness, histogram spread, etc.
+    
+    return cluster[0].path; // Simple selection
+  }
+
+  /**
+   * Process images into clusters with representatives
+   */
+  async processImages(imagePaths) {
+    const clusters = await this.clusterSimilarImages(imagePaths);
+    
+    const results = await Promise.all(
+      clusters.map(async (cluster) => ({
+        representative: await this.selectRepresentative(cluster),
+        similar: cluster.map(img => img.path),
+        count: cluster.length
+      }))
+    );
+
+    return results;
+  }
+}
+
+module.exports = SimilarityDetector;
+```
+
+### 4. Ollama Integration
+
+```javascript
+// src/services/ollamaService.js
+const axios = require('axios');
+
+class OllamaService {
+  constructor(config) {
+    this.endpoint = config.ollama.endpoint || 'http://localhost:11434';
+    this.model = config.ollama.model || 'llava:latest';
+    this.confidenceThreshold = config.ollama.confidenceThreshold || 0.95;
+  }
+
+  /**
+   * Check if Ollama is available
+   */
+  async checkAvailability() {
+    try {
+      const response = await axios.get(`${this.endpoint}/api/tags`);
+      return response.status === 200;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * Encode image to base64
+   */
+  async encodeImage(imagePath) {
+    const fs = require('fs').promises;
+    const imageBuffer = await fs.readFile(imagePath);
+    return imageBuffer.toString('base64');
+  }
+
+  /**
+   * Analyze image using Ollama vision model
+   */
+  async analyzeImage(imagePath) {
+    try {
+      const imageBase64 = await this.encodeImage(imagePath);
+
+      const prompt = `Analyze this photograph in detail and provide a JSON response with the following structure:
+{
+  "subjects": ["list of main subjects like people, animals, objects"],
+  "scene_type": "type of scene (landscape, portrait, macro, architecture, etc.)",
+  "setting": "description of location and environment",
+  "colors": ["dominant colors"],
+  "lighting": "lighting description",
+  "mood": "mood or atmosphere",
+  "keywords": ["at least 10 relevant keywords for cataloging"],
+  "description": "detailed 2-3 sentence description",
+  "confidence": 0.95
+}
+
+Only respond with valid JSON, no other text.`;
+
+      const response = await axios.post(
+        `${this.endpoint}/api/generate`,
+        {
+          model: this.model,
+          prompt: prompt,
+          images: [imageBase64],
+          stream: false,
+          options: {
+            temperature: 0.1,
+            num_predict: 500
+          }
+        },
+        {
+          timeout: 60000 // 60 second timeout
+        }
+      );
+
+      // Parse the response
+      const result = this.parseResponse(response.data.response);
+      return result;
+
+    } catch (error) {
+      throw new Error(`Ollama analysis failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Parse and validate Ollama response
+   */
+  parseResponse(responseText) {
+    try {
+      // Remove markdown code blocks if present
+      let cleaned = responseText.trim();
+      cleaned = cleaned.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+      
+      const parsed = JSON.parse(cleaned);
+
+      // Validate required fields
+      const required = ['subjects', 'scene_type', 'keywords', 'description'];
+      for (const field of required) {
+        if (!parsed[field]) {
+          throw new Error(`Missing required field: ${field}`);
+        }
+      }
+
+      // Ensure confidence is set
+      if (typeof parsed.confidence !== 'number') {
+        parsed.confidence = 0.8; // Default if not provided
+      }
+
+      return parsed;
+
+    } catch (error) {
+      throw new Error(`Failed to parse Ollama response: ${error.message}`);
+    }
+  }
+
+  /**
+   * Check if results meet confidence threshold
+   */
+  meetsConfidenceThreshold(result) {
+    if (!result || !result.confidence) return false;
+    return result.confidence >= this.confidenceThreshold;
+  }
+}
+
+module.exports = OllamaService;
+```
+
+### 5. Google Vision Fallback
+
+```javascript
+// src/services/googleVisionService.js
+const vision = require('@google-cloud/vision');
+const fs = require('fs').promises;
+
+class GoogleVisionService {
+  constructor(config) {
+    this.enabled = config.googleVision.enabled;
+    this.apiKey = config.googleVision.apiKey;
+    
+    if (this.enabled && this.apiKey) {
+      this.client = new vision.ImageAnnotatorClient({
+        keyFilename: this.apiKey // or use API key directly
+      });
+    }
+  }
+
+  /**
+   * Check if service is configured
+   */
+  isAvailable() {
+    return this.enabled && this.client !== null;
+  }
+
+  /**
+   * Analyze image using Google Vision API
+   */
+  async analyzeImage(imagePath) {
+    if (!this.isAvailable()) {
+      throw new Error('Google Vision API not configured');
+    }
+
+    try {
+      const imageBuffer = await fs.readFile(imagePath);
+
+      // Request multiple features
+      const [result] = await this.client.annotateImage({
+        image: { content: imageBuffer },
+        features: [
+          { type: 'LABEL_DETECTION', maxResults: 20 },
+          { type: 'OBJECT_LOCALIZATION', maxResults: 10 },
+          { type: 'IMAGE_PROPERTIES' },
+          { type: 'WEB_DETECTION' }
+        ]
+      });
+
+      return this.formatResponse(result);
+
+    } catch (error) {
+      throw new Error(`Google Vision analysis failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Format Google Vision response to match our structure
+   */
+  formatResponse(apiResult) {
+    const labels = apiResult.labelAnnotations || [];
+    const objects = apiResult.localizedObjectAnnotations || [];
+    const colors = apiResult.imagePropertiesAnnotation?.dominantColors?.colors || [];
+    const webDetection = apiResult.webDetection || {};
+
+    // Extract subjects from objects
+    const subjects = objects.map(obj => obj.name);
+
+    // Extract keywords from labels
+    const keywords = labels
+      .filter(label => label.score > 0.7)
+      .map(label => label.description);
+
+    // Determine scene type from labels
+    const sceneType = this.inferSceneType(labels);
+
+    // Get dominant colors
+    const dominantColors = colors
+      .slice(0, 3)
+      .map(c => this.rgbToColorName(c.color));
+
+    // Build description from top labels
+    const topLabels = labels.slice(0, 5).map(l => l.description);
+    const description = `Image contains ${topLabels.join(', ')}`;
+
+    return {
+      subjects: subjects.length > 0 ? subjects : topLabels.slice(0, 3),
+      scene_type: sceneType,
+      setting: webDetection.bestGuessLabel || '',
+      colors: dominantColors,
+      keywords: [...new Set([...keywords, ...subjects])], // Remove duplicates
+      description: description,
+      confidence: 0.98 // Google is generally very confident
+    };
+  }
+
+  /**
+   * Infer scene type from labels
+   */
+  inferSceneType(labels) {
+    const sceneMap = {
+      'landscape': ['mountain', 'sky', 'nature', 'outdoor', 'scenic'],
+      'portrait': ['person', 'face', 'people', 'human'],
+      'macro': ['close-up', 'detail', 'insect', 'flower'],
+      'architecture': ['building', 'structure', 'architectural'],
+      'wildlife': ['animal', 'bird', 'wildlife'],
+      'food': ['food', 'dish', 'meal', 'cuisine']
+    };
+
+    for (const [type, keywords] of Object.entries(sceneMap)) {
+      for (const label of labels) {
+        if (keywords.some(kw => label.description.toLowerCase().includes(kw))) {
+          return type;
+        }
+      }
+    }
+
+    return 'general';
+  }
+
+  /**
+   * Convert RGB to approximate color name
+   */
+  rgbToColorName(rgb) {
+    // Simplified color naming
+    const r = rgb.red || 0;
+    const g = rgb.green || 0;
+    const b = rgb.blue || 0;
+
+    if (r > 200 && g > 200 && b > 200) return 'white';
+    if (r < 50 && g < 50 && b < 50) return 'black';
+    if (r > g && r > b) return 'red';
+    if (g > r && g > b) return 'green';
+    if (b > r && b > g) return 'blue';
+    if (r > 150 && g > 150 && b < 100) return 'yellow';
+    
+    return 'mixed';
+  }
+}
+
+module.exports = GoogleVisionService;
+```
+
+### 6. XMP Generator
+
+```javascript
+// src/services/xmpGenerator.js
+const fs = require('fs').promises;
+const path = require('path');
+
+class XMPGenerator {
+  constructor(config) {
+    this.config = config;
+  }
+
+  /**
+   * Generate XMP content from metadata
+   */
+  generateXMPContent(metadata, imagePath) {
+    const keywords = this.formatKeywords(metadata.keywords || []);
+    const description = this.escapeXML(metadata.description || '');
+    const title = this.escapeXML(metadata.subjects?.join(', ') || '');
+    const timestamp = new Date().toISOString();
+
+    const xmpTemplate = `<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 7.0-c000 1.000000, 0000/00/00-00:00:00">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description rdf:about=""
+      xmlns:dc="http://purl.org/dc/elements/1.1/"
+      xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+      xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/"
+      xmlns:Iptc4xmpCore="http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/">
+      
+      <dc:title>
+        <rdf:Alt>
+          <rdf:li xml:lang="x-default">${title}</rdf:li>
+        </rdf:Alt>
+      </dc:title>
+      
+      <dc:description>
+        <rdf:Alt>
+          <rdf:li xml:lang="x-default">${description}</rdf:li>
+        </rdf:Alt>
+      </dc:description>
+      
+      <dc:subject>
+        <rdf:Bag>
+${keywords}
+        </rdf:Bag>
+      </dc:subject>
+      
+      <photoshop:Category>${this.escapeXML(metadata.scene_type || '')}</photoshop:Category>
+      
+      <xmp:ModifyDate>${timestamp}</xmp:ModifyDate>
+      <xmp:MetadataDate>${timestamp}</xmp:MetadataDate>
+      
+      ${metadata.colors ? this.formatColors(metadata.colors) : ''}
+      
+    </rdf:Description>
+  </rdf:RDF>
+</x:xmpmeta>`;
+
+    return xmpTemplate;
+  }
+
+  /**
+   * Format keywords as RDF list items
+   */
+  formatKeywords(keywords) {
+    return keywords
+      .map(kw => `          <rdf:li>${this.escapeXML(kw)}</rdf:li>`)
+      .join('\n');
+  }
+
+  /**
+   * Format colors as XMP metadata
+   */
+  formatColors(colors) {
+    if (!colors || colors.length === 0) return '';
+    
+    const colorList = colors
+      .map(c => `          <rdf:li>${this.escapeXML(c)}</rdf:li>`)
+      .join('\n');
+    
+    return `<Iptc4xmpCore:Scene>
+        <rdf:Bag>
+${colorList}
+        </rdf:Bag>
+      </Iptc4xmpCore:Scene>`;
+  }
+
+  /**
+   * Escape XML special characters
+   */
+  escapeXML(text) {
+    if (typeof text !== 'string') return '';
+    
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+
+  /**
+   * Write XMP file for an image
+   */
+  async writeXMP(imagePath, metadata) {
+    const xmpContent = this.generateXMPContent(metadata, imagePath);
+    const xmpPath = imagePath.replace(/\.[^.]+$/, '.xmp');
+
+    try {
+      await fs.writeFile(xmpPath, xmpContent, 'utf8');
+      return xmpPath;
+    } catch (error) {
+      throw new Error(`Failed to write XMP file: ${error.message}`);
+    }
+  }
+
+  /**
+   * Apply metadata to image and all its derivatives
+   */
+  async applyMetadata(baseImage, derivatives, metadata) {
+    const files = [baseImage, ...(derivatives || [])];
+    const results = [];
+
+    for (const file of files) {
+      try {
+        const xmpPath = await this.writeXMP(file, metadata);
+        results.push({ file, xmpPath, success: true });
+      } catch (error) {
+        results.push({ file, error: error.message, success: false });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Validate XMP file (basic check)
+   */
+  async validateXMP(xmpPath) {
+    try {
+      const content = await fs.readFile(xmpPath, 'utf8');
+      
+      // Basic validation: check for required elements
+      const required = ['x:xmpmeta', 'rdf:RDF', 'rdf:Description'];
+      for (const tag of required) {
+        if (!content.includes(tag)) {
+          return { valid: false, error: `Missing required tag: ${tag}` };
+        }
+      }
+
+      return { valid: true };
+    } catch (error) {
+      return { valid: false, error: error.message };
+    }
+  }
+}
+
+module.exports = XMPGenerator;
+```
+
+### 7. Main Processing Coordinator
+
+```javascript
+// src/services/processingCoordinator.js
+const EventEmitter = require('events');
+
+class ProcessingCoordinator extends EventEmitter {
+  constructor(services, config) {
+    super();
+    this.fileManager = services.fileManager;
+    this.imageProcessor = services.imageProcessor;
+    this.similarityDetector = services.similarityDetector;
+    this.ollamaService = services.ollamaService;
+    this.googleVisionService = services.googleVisionService;
+    this.xmpGenerator = services.xmpGenerator;
+    this.config = config;
+  }
+
+  /**
+   * Process a directory of images
+   */
+  async processDirectory(dirPath) {
+    this.emit('started', { directory: dirPath });
+
+    try {
+      // Step 1: Scan and identify files
+      this.emit('progress', { stage: 'scanning', percent: 0 });
+      const fileTree = await this.fileManager.scanDirectory(dirPath);
+      
+      this.emit('progress', { 
+        stage: 'scanning', 
+        percent: 100,
+        baseImages: fileTree.baseImages.length
+      });
+
+      // Step 2: Convert and hash images
+      this.emit('progress', { stage: 'preprocessing', percent: 0 });
+      const processedImages = await this.preprocessImages(fileTree.baseImages);
+      
+      // Step 3: Cluster similar images
+      this.emit('progress', { stage: 'clustering', percent: 0 });
+      const clusters = await this.similarityDetector.processImages(
+        processedImages.map(p => p.jpgPath)
+      );
+
+      this.emit('progress', { 
+        stage: 'clustering', 
+        percent: 100,
+        clusters: clusters.length
+      });
+
+      // Step 4: Analyze representatives
+      this.emit('progress', { stage: 'analyzing', percent: 0 });
+      const results = await this.analyzeCluster(clusters, fileTree);
+
+      this.emit('completed', { 
+        total: fileTree.baseImages.length,
+        clusters: clusters.length,
+        results 
+      });
+
+      return results;
+
+    } catch (error) {
+      this.emit('error', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Preprocess all base images
+   */
+  async preprocessImages(baseImages) {
+    const results = [];
+    
+    for (let i = 0; i < baseImages.length; i++) {
+      const imagePath = baseImages[i];
+      
+      try {
+        const jpgPath = await this.imageProcessor.rawToJpg(imagePath, {
+          usePreview: this.config.processing.useEmbeddedPreview
+        });
+
+        results.push({ originalPath: imagePath, jpgPath });
+
+        this.emit('progress', {
+          stage: 'preprocessing',
+          percent: Math.round(((i + 1) / baseImages.length) * 100),
+          current: i + 1,
+          total: baseImages.length
+        });
+
+      } catch (error) {
+        this.emit('imageError', { imagePath, error: error.message });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Analyze image clusters
+   */
+  async analyzeClusters(clusters, fileTree) {
+    const results = [];
+
+    for (let i = 0; i < clusters.length; i++) {
+      const cluster = clusters[i];
+      
+      try {
+        // Analyze representative
+        const metadata = await this.analyzeImage(cluster.representative);
+
+        // Apply to all similar images in cluster
+        for (const imagePath of cluster.similar) {
+          const derivatives = fileTree.derivatives.get(imagePath) || [];
+          const xmpResults = await this.xmpGenerator.applyMetadata(
+            imagePath,
+            derivatives,
+            metadata
+          );
+
+          results.push({
+            image: imagePath,
+            derivatives,
+            metadata,
+            xmpResults
+          });
+        }
+
+        this.emit('progress', {
+          stage: 'analyzing',
+          percent: Math.round(((i + 1) / clusters.length) * 100),
+          current: i + 1,
+          total: clusters.length
+        });
+
+      } catch (error) {
+        this.emit('clusterError', { cluster, error: error.message });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Analyze single image with fallback logic
+   */
+  async analyzeImage(imagePath) {
+    // Try Ollama first
+    try {
+      const result = await this.ollamaService.analyzeImage(imagePath);
+
+      if (this.ollamaService.meetsConfidenceThreshold(result)) {
+        this.emit('analysisComplete', { 
+          image: imagePath, 
+          method: 'ollama',
+          confidence: result.confidence
+        });
+        return result;
+      }
+
+      // Low confidence, try Google
+      if (this.googleVisionService.isAvailable()) {
+        this.emit('fallback', { 
+          image: imagePath, 
+          reason: 'low_confidence',
+          confidence: result.confidence 
+        });
+        
+        const googleResult = await this.googleVisionService.analyzeImage(imagePath);
+        return googleResult;
+      }
+
+      // No fallback available, return Ollama result anyway
+      return result;
+
+    } catch (error) {
+      // Ollama failed, try Google
+      if (this.googleVisionService.isAvailable()) {
+        this.emit('fallback', { 
+          image: imagePath, 
+          reason: 'ollama_error',
+          error: error.message 
+        });
+        
+        return await this.googleVisionService.analyzeImage(imagePath);
+      }
+
+      throw error;
+    }
+  }
+}
+
+module.exports = ProcessingCoordinator;
+```
+
+## Testing Examples
+
+### Unit Test Example
+
+```javascript
+// tests/fileManager.test.js
+const FileManager = require('../src/services/fileManager');
+const assert = require('assert');
+
+describe('FileManager', () => {
+  const fm = new FileManager();
+
+  describe('getBaseFilename', () => {
+    it('should extract base from RAW file', () => {
+      const result = fm.getBaseFilename('_MG_9194.CR2');
+      assert.strictEqual(result, '_MG_9194');
+    });
+
+    it('should extract base from derivative', () => {
+      const result = fm.getBaseFilename('_MG_9194-adj-Edit.tif');
+      assert.strictEqual(result, '_MG_9194');
+    });
+  });
+
+  describe('isBaseImage', () => {
+    it('should identify CR2 as base', () => {
+      assert.strictEqual(fm.isBaseImage('test.CR2'), true);
+    });
+
+    it('should identify TIF as not base', () => {
+      assert.strictEqual(fm.isBaseImage('test.tif'), false);
+    });
+  });
+});
+```
+
+## Common Pitfalls to Avoid
+
+1. **Memory Leaks**: Always close file handles and clean up temp files
+2. **Blocking Event Loop**: Use async/await, avoid synchronous file operations
+3. **Error Handling**: Wrap all I/O operations in try-catch
+4. **API Rate Limits**: Implement backoff for Google Vision API
+5. **XMP Validation**: Test generated XMP files with actual Lightroom before production use

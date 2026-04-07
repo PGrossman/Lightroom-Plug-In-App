@@ -1,0 +1,299 @@
+================================================================================
+LIGHTROOM META TAGGER - VERSION 0.2
+Release Date: October 8, 2025
+================================================================================
+
+VERSION 0.2 - SIMILARITY DETECTION & UI ENHANCEMENTS
+====================================================
+
+This version introduces major improvements to the similarity detection system
+and Results tab UI, including automatic cluster grouping and deduplication.
+
+
+NEW FEATURES
+============
+
+1. AUTO-START CLIP SERVICE
+   - CLIP similarity service now starts automatically with the app
+   - No need to manually run Python script in separate terminal
+   - Service auto-stops when app quits
+   - Health check and auto-restart capabilities
+   - New service manager: src/services/clipServiceManager.js
+
+2. SIMILARITY GROUP DEDUPLICATION
+   - Automatically groups visually similar clusters together
+   - Uses Union-Find algorithm to build connected components
+   - Picks the cluster with most similarity connections as main representative
+   - Single row displays main representative + all similar clusters
+   - Reduces clutter: 13 rows collapse to 2-3 groups
+   
+3. ENHANCED RESULTS TAB UI
+   - Clean table view with similarity grouping
+   - Blue left border indicates similarity groups
+   - Thumbnail grid shows all similar parent representatives
+   - Group indicator shows "🔗 X similar clusters"
+   - Removed verbose popup alerts and percentage badges
+   - Streamlined, cleaner interface
+
+
+MAJOR CHANGES
+==============
+
+UI/UX Improvements:
+-------------------
+- Process Images button repositioned to status panel (next to file counts)
+- Fixed pagination control margins (40px spacing, no overlap with table)
+- Removed duplicate CSS definitions causing style conflicts
+- Auto-switch to Visual Analysis tab after processing (no popup)
+- Removed similarity percentage badges from thumbnails (shown in tooltip only)
+- Similar Parent Representatives column shows OTHER cluster representatives
+- Tab structure reorganized:
+  * "Results" renamed to "Visual Analysis"
+  * New "AI Analysis" tab added (placeholder for Phase 3)
+  * "Settings" tab moved to the end
+
+Similarity Detection:
+---------------------
+- CLIP service auto-starts on app launch
+- Added comprehensive debug logging throughout similarity pipeline
+- Fixed data flow from main.js → app.js → Results rendering
+- Path mapping correctly handles preview JPG → original CR2/TIF conversion
+- Similarity results properly stored in window.similarityResults
+- Deduplication prevents showing duplicate rows for similar pairs
+
+Results Tab:
+------------
+- Similarity groups built using Union-Find algorithm
+- One row per similarity group (not per cluster)
+- Main representative = cluster with most similarity connections
+- Similar representatives shown as thumbnail grid
+- Tooltips show similarity percentages (hover over thumbnails)
+- Pagination counts groups instead of individual clusters
+
+
+TECHNICAL DETAILS
+==================
+
+New Files:
+----------
+- src/services/clipServiceManager.js - Python CLIP service lifecycle manager
+- z_VERSIONS/Lightroom-Meta-Tagger-v0.2.zip - This release package
+
+Modified Files:
+---------------
+- src/main/main.js
+  * Import and initialize ClipServiceManager
+  * Auto-start CLIP service in app.whenReady()
+  * Auto-stop CLIP service in app.on('before-quit')
+  * Added IPC handlers: check-clip-service, restart-clip-service
+  * Enhanced debug logging for similarity detection pipeline
+  * Return similarityResults with full path mapping
+
+- src/main/preload.js
+  * Added checkClipService() IPC method
+  * Added restartClipService() IPC method
+
+- src/renderer/app.js
+  * New buildSimilarityGroups() function (Union-Find algorithm)
+  * Modified loadProcessedResults() to use similarity groups
+  * New createResultsTableRowFromGroup() function
+  * Modified renderResultsPage() to render groups instead of clusters
+  * Removed renderSimilaritySummary() top box
+  * Removed "Processing Complete!" alert popup
+  * Removed percentage badges from similar thumbnails
+  * Added debug logging for data flow verification
+
+- src/renderer/index.html
+  * Process Images button moved to status-panel
+  * Pagination controls: added inline margin styles
+  * Table header updated: "Similar Parent Representatives"
+  * Tab navigation updated: "Results" → "Visual Analysis"
+  * New "AI Analysis" tab added with placeholder content
+  * Settings tab moved to the end of tab list
+
+- src/renderer/styles.css
+  * Fixed pagination-controls margins (40px with !important)
+  * Removed duplicate .pagination-controls definition
+  * Updated .process-section and .process-btn styling
+  * Process button gradient background and hover effects
+
+- config.json
+  * Similarity settings configured and validated
+
+
+SIMILARITY GROUPING ALGORITHM
+==============================
+
+The deduplication uses a Union-Find (Disjoint Set Union) algorithm:
+
+1. Each cluster starts as its own group
+2. For each similarity pair (A ↔ B), merge A and B into same group
+3. Transitively connects all similar clusters (if A↔B and B↔C, then A,B,C are grouped)
+4. Within each group, count similarity connections per cluster
+5. Pick cluster with MOST connections as main representative
+6. Other clusters in group become "similar representatives"
+7. Render one row per group (not per cluster)
+
+Example:
+--------
+Before: 13 clusters = 13 rows
+- _GP_0811 (8 connections)
+- _GP_0826 (6 connections)
+- _GP_0830 (5 connections)
+- _GP_0217 (4 connections)
+- _GP_0222 (4 connections)
+- ... etc
+
+After: 13 clusters = 2-3 groups = 2-3 rows
+- Row 1: _GP_0811 as main + [_GP_0826, _GP_0830, _GP_0217, ...] as thumbnails
+- Row 2: Prometheus A + [Prometheus B] as thumbnail
+- Row 3: Any ungrouped clusters
+
+
+DATA FLOW
+==========
+
+Phase 2 Processing Pipeline:
+-----------------------------
+1. Extract metadata from all images (EXIF, GPS, timestamps)
+2. Process cluster representatives → create preview JPGs in temp/
+3. Send preview JPG paths to CLIP service (port 8765)
+4. CLIP returns similarity pairs (preview JPG hash filenames)
+5. Map preview JPG hashes back to original CR2/TIF paths
+6. Return { processedClusters, similarityResults } to renderer
+
+Results Tab Rendering:
+----------------------
+1. Receive processedClusters and similarityResults from IPC
+2. Store in window.processedClusters and window.similarityResults
+3. Build similarity groups using buildSimilarityGroups()
+4. Render one row per group (not per cluster)
+5. Show main representative + similar cluster thumbnails
+
+
+DEBUGGING
+==========
+
+Debug logging added at key points:
+
+1. main.js line 563: Final similarity results being returned to UI
+2. app.js line 375: Similarity data stored in window
+3. app.js line 1068: Finding similar for each cluster (OLD function)
+4. buildSimilarityGroups(): Group creation and main rep selection
+
+Console output shows:
+- 🔗 Building similarity groups...
+- 📦 Created X groups from Y clusters
+- Group: filename (N connections) + M similar
+
+
+KNOWN LIMITATIONS
+=================
+
+1. Hidden cluster data not displayed in Results tab
+   - Only main representative's bracketed images/derivatives shown
+   - Other clusters in group are hidden (their bracketed images don't appear)
+   - This is intentional - keeps UI clean
+   - When LLM tags are applied, they'll apply to all clusters in group
+
+2. Similarity percentage not shown in table
+   - Removed percentage badges for cleaner UI
+   - Percentages still available in tooltip (hover over thumbnails)
+
+3. No manual ungrouping in Results tab yet
+   - Future feature: allow user to split incorrectly grouped clusters
+   - Current workaround: adjust similarity threshold in config
+
+
+DEPENDENCIES
+============
+
+Required:
+- Python 3 (for CLIP service)
+- pip packages: fastapi, transformers, pillow, torch, uvicorn
+- Node.js packages: electron, sharp, exiftool-vendored, imghash, better-sqlite3, axios
+
+The CLIP service is now managed automatically by the Electron app.
+
+
+MIGRATION FROM V0.1
+===================
+
+1. No database changes - existing data compatible
+2. CLIP service now auto-starts (stop any manually running instances)
+3. Config.json similarity settings remain unchanged
+4. Results tab will show grouped view instead of individual cluster rows
+
+
+TESTING CHECKLIST
+=================
+
+✅ CLIP service auto-starts on app launch
+✅ Scan directory with clustering (Phase 1)
+✅ Process images with similarity detection (Phase 2)
+✅ Auto-switch to Results tab (no popup)
+✅ See grouped rows (reduced from 13 to 2-3)
+✅ Blue left border on grouped rows
+✅ Similar cluster thumbnails in Column 2
+✅ Tooltip shows similarity percentage on hover
+✅ No percentage badges cluttering the thumbnails
+✅ Pagination works with groups
+
+
+FILES INCLUDED
+==============
+
+Core Application:
+- package.json, package-lock.json
+- config.json
+- README.md
+
+Source Code:
+- src/main/main.js, preload.js
+- src/renderer/index.html, app.js, styles.css
+- src/services/*.js (11 service modules including clipServiceManager)
+- src/utils/*.js (logger, systemCheck)
+- src/config/ (configuration directory)
+
+Python Service:
+- similarity_service.py (FastAPI CLIP service)
+
+Scripts & Tests:
+- scripts/verify-setup.js
+- tests/fileManager.test.js
+
+Documentation:
+- zz_Lightroom Meta Data Docs - DO NOT TOUCH/ (5 reference documents)
+
+
+VERSION HISTORY
+===============
+
+v0.2 (October 8, 2025)
+- Added auto-start CLIP service
+- Implemented similarity group deduplication
+- Enhanced Results tab UI with grouping
+- Fixed pagination overlap issues
+- Removed verbose popups and badges
+- Added comprehensive debug logging
+
+v0.1 (Previous)
+- Initial release with basic clustering
+- Manual CLIP service startup
+- Individual cluster rows in Results tab
+
+
+CREDITS
+=======
+
+Development: AI-assisted coding with Claude & Cursor
+CLIP Model: OpenAI CLIP-ViT-Base-Patch32
+Architecture: Electron + Node.js + Python FastAPI
+
+
+================================================================================
+For questions or issues, refer to the documentation in:
+zz_Lightroom Meta Data Docs - DO NOT TOUCH/
+================================================================================
+
+

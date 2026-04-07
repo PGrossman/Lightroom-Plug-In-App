@@ -1,0 +1,38 @@
+Lightroom Meta Tagger v0.7.2 - Prompt Editor Feature
+
+## What's New in v0.7.2:
+- Added comprehensive prompt editor feature for AI analysis
+- Per-cluster custom prompt editing functionality
+- View/Edit Prompt buttons on cluster thumbnails
+- Smart default prompt generation with context awareness
+- Session-based prompt storage with visual feedback
+- Professional modal UI with responsive design
+- Enhanced AI analysis workflow with custom prompt support
+
+## Key Features:
+- Per-image prompt customization
+- Default prompt generation based on GPS, keywords, and context
+- Session persistence of custom prompts (not written to disk)
+- Visual feedback (button state changes when custom prompt exists)
+- Graceful fallbacks and comprehensive error handling
+- Integration with existing AI analysis pipeline
+
+## Files Included:
+- Complete source code (src/)
+- Configuration files (config.json, package.json)
+- Documentation (README.md)
+- All dependencies and utilities
+
+## Installation:
+1. Extract the zip file
+2. Run 'npm install' to install dependencies
+3. Run 'npm start' to launch the application
+
+## Usage:
+1. Scan a directory with images
+2. Process the images to create clusters
+3. Go to AI Analysis tab
+4. Click 'View Prompt' on any cluster to edit the AI prompt
+5. Click 'Analyze with AI' to use your custom prompt
+
+Created: Wed Oct 15 10:37:05 EDT 2025

@@ -12,16 +12,12 @@ class AIAnalysisService {
   /**
    * Main analysis method using Gemini
    */
-  async analyzeCluster(cluster, existingData = {}, _legacyProvider = null, customPrompt = null) {
+  async analyzeCluster(cluster, existingData = {}, _legacyProvider = null, customPromptOrAnchor = null) {
     console.log('\n🤖 === AI ANALYSIS START ===');
     console.log('   Cluster:', cluster.mainRep?.representativeFilename || 'unknown');
+    console.log('   hasAnchorContext:', !!customPromptOrAnchor);
     
-    // FETCH GLOBAL ANCHOR CONTEXT DIRECTLY FROM SAVED SETTINGS
-    const globalAnchorContext = this.config.aiAnalysis?.anchorContext || null;
-    
-    console.log('   Global Anchor Context:', globalAnchorContext);
-    console.log('   Has Custom Prompt (Editor):', !!customPrompt);
-
+    const anchorContext = customPromptOrAnchor; // The UI sends the anchor context here
     const context = this.buildContext(cluster, existingData);
     const repPath = cluster.mainRep.representativePath;
 
@@ -31,15 +27,7 @@ class AIAnalysisService {
 
     let result;
     try {
-      let prompt;
-      
-      if (customPrompt) {
-        // If the user used the "Edit Prompt" button, use their exact words
-        prompt = customPrompt;
-      } else {
-        // Otherwise, build the Expert Archivist prompt using the Global Anchor Context
-        prompt = this.buildPrompt(context, globalAnchorContext);
-      }
+      const prompt = this.buildPrompt(context, anchorContext);
       
       this.logger.info('Using Gemini for analysis', { model: this.config.aiAnalysis?.activeGeminiModel });
       result = await this.geminiService.analyzeImageWithVision(repPath, prompt);
@@ -92,6 +80,12 @@ class AIAnalysisService {
     };
   }
 
+  /**
+   * Build LLM prompt with context and anchor context
+   * @param {Object} context - Context object with metadata
+   * @param {String} anchorContext - User-provided global context
+   * @returns {String} - Formatted prompt
+   */
   buildPrompt(context, anchorContext = null) {
     const filename = context.filename || 'Unknown';
     const keywords = context.existingKeywords || [];
@@ -100,62 +94,53 @@ class AIAnalysisService {
     
     const keywordsStr = keywords.length > 0 ? keywords.join(', ') : '';
     
-    let prompt = `You are an expert archivist cataloging a photograph named ${filename}.`;
+    let prompt = `Analyze the provided photograph, named ${filename}.`;
     
     if (anchorContext && anchorContext.trim().length > 0) {
-      prompt += `\n\n*** CRITICAL OVERRIDE DIRECTIVE ***\nThe user has identified the exact subject of this photo as: "${anchorContext.trim()}"\n\nYou MUST treat this identification as absolute, indisputable fact. You are acting as an expert archivist and historian for this specific subject. Do not guess; state definitively that the image shows this subject. You MUST include the EXACT PHRASE "${anchorContext.trim()}" verbatim in your title, caption, and the very first sentence of the description. Do not merely describe a "rusty room" or "abandoned facility"—you must describe the specific historical and functional reality of "${anchorContext.trim()}".\n\n`;
+      prompt += `\n\nUSER-PROVIDED CONTEXT FOR THIS IMAGE BATCH:\n"${anchorContext.trim()}"\nUse this context heavily to inform your analysis, location identification, and event descriptions.\n\n`;
     }
     
     if (keywordsStr) {
-      prompt += ` Current tags: ${keywordsStr}.`;
+      prompt += ` The image is already tagged with: ${keywordsStr}.`;
     }
     
     if (gps && gps.latitude && gps.longitude) {
-      prompt += ` Verified GPS coordinates: ${gps.latitude}, ${gps.longitude}.`;
+      prompt += ` The provided GPS coordinates are: Latitude: ${gps.latitude}, Longitude: ${gps.longitude}.`;
     }
     
+    prompt += `\n\nYour task is to generate detailed metadata for this image, specifically focusing on providing a comprehensive description, accurate keywords, and a compelling title.`;
     prompt += `\n\nInstructions:`;
     
     if (anchorContext && anchorContext.trim().length > 0) {
-      prompt += `\n1. Anchor Context Domination: Your entire analysis must be framed around the user's provided context ("${anchorContext.trim()}"). If they named a specific reactor, control room, or building, you must name it explicitly in the title, caption, and the very first sentence of the description.`;
-      prompt += `\n2. Expert Translation: Contextually translate any visible text, Cyrillic labels, or dials based specifically on the machinery that would exist at "${anchorContext.trim()}".`;
-    } else {
-      prompt += `\n1. Visual Analysis: Examine the image for distinctive features, architecture, and overall mood.`;
+      prompt += `\n- Anchor Context Priority: Maximize use of the user-provided context above. If they named an event, place, or people, assume it applies to this image.`;
     }
 
     if (gps && gps.latitude && gps.longitude) {
-      prompt += `\n3. GPS Verification: Use the provided GPS (${gps.latitude}, ${gps.longitude}) purely to verify the region (e.g., Chernobyl Exclusion Zone) and enrich the historical context.`;
+      prompt += `\n- Prioritize Provided GPS: Use the provided GPS coordinates (${gps.latitude}, ${gps.longitude}) to determine the city, state, and country.`;
     } else {
-      prompt += `\n3. Deduce GPS: If no GPS is provided, you MUST deduce the highly accurate latitude and longitude based on the user's provided context and include it in the JSON.`;
+      prompt += `\n- Estimate Location: Attempt to estimate the location from visual clues only if you are highly confident. Otherwise set location fields to null.`;
     }
     
-    prompt += `\n\nConstruct a JSON object with the following fields:`;
-    prompt += `\n  - title: An engaging title explicitly naming the subject.`;
-    prompt += `\n  - caption: STRICT MAXIMUM OF 2 SENTENCES. Provide a brief, punchy summary explicitly naming the subject. Do NOT make this as long as the description.`;
-    if (anchorContext && anchorContext.trim().length > 0) {
-      prompt += `\n  - description: A rich, highly detailed 1-paragraph description. Write this EXACTLY as if you were responding to the prompt: "Give me a description of this photo, ${anchorContext.trim()}". Combine what you see visually with your deep historical knowledge of this subject.`;
-    } else {
-      prompt += `\n  - description: A thorough, definitive 1-paragraph description of what you see.`;
-    }
-    prompt += `\n  - keywords: An array of 7-15 highly relevant keywords (e.g., ["keyword1", "keyword2"]). You MUST return a valid JSON array of strings, not a single comma-separated string.`;
+    prompt += `\n- Visual Analysis: Examine the image for distinctive features, architecture, landscape, and overall mood.`;
+    prompt += `\n- Construct Metadata: Create a JSON object with the following fields:`;
+    prompt += `\n  - title: A specific and engaging title for the image.`;
+    prompt += `\n  - keywords: 7-15 relevant keywords and tags.`;
     prompt += `\n  - location: A detailed description of the identified location.`;
-    prompt += `\n  - gps: An object with 'latitude' and 'longitude' (number format). Provide this ONLY IF deduced from context or provided to you.`;
+    prompt += `\n  - description: A thorough description of the scene.`;
     prompt += `\n  - technicalDetails: Observations on lighting or composition.`;
-    prompt += `\n  - confidence: Your confidence level (0.0 to 1.0).`;
+    prompt += `\n  - confidence: Your confidence level (0.0 to 1.0) in the accuracy of the metadata.`;
     prompt += `\n  - uncertainFields: An array listing any fields you are unsure about.`;
     
     if (imageCount > 1) {
-      prompt += `\n\nThis image is part of a cluster of ${imageCount} related images.`;
+      prompt += `\n\nThis image is part of a cluster of ${imageCount} related images. Consider this context if it helps refine the identification.`;
     }
     
-    prompt += `\n\nOutput ONLY valid JSON in this exact format:`;
+    prompt += `\n\nOutput the result in the specified JSON format EXACTLY:`;
     prompt += `\n{`;
     prompt += `\n  "title": "Descriptive title here",`;
-    prompt += `\n  "caption": "Short, punchy 1-2 sentence engaging summary. Strictly shorter than the description.",`;
-    prompt += `\n  "description": "Detailed, definitive description of what you see, including translations.",`;
     prompt += `\n  "keywords": ["keyword1", "keyword2", "keyword3"],`;
     prompt += `\n  "location": "Location description or null",`;
-    prompt += `\n  "gps": {"latitude": 51.3895, "longitude": 30.0991},`;
+    prompt += `\n  "description": "Detailed description of what you see",`;
     prompt += `\n  "technicalDetails": "Technical observations or null",`;
     prompt += `\n  "confidence": 0.95,`;
     prompt += `\n  "uncertainFields": []`;
@@ -193,6 +178,8 @@ class AIAnalysisService {
       });
     }
     
+    // TODO: Add derivatives count when derivative tracking is implemented
+    
     return total;
   }
 
@@ -228,6 +215,8 @@ class AIAnalysisService {
         }
       });
     }
+    
+    // TODO: Add derivatives when implemented
     
     // Remove duplicates
     return [...new Set(paths)];

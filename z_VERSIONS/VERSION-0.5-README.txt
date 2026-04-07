@@ -1,0 +1,363 @@
+========================================
+LIGHTROOM META TAGGER - VERSION 0.5
+========================================
+Release Date: October 10, 2025
+Build: v0.5 - CRITICAL BUG FIXES
+
+========================================
+CRITICAL FIXES IN VERSION 0.5
+========================================
+
+🔥 DERIVATIVES NOW WORK CORRECTLY! 🔥
+
+This release fixes critical bugs that prevented derivatives (TIF/PSD edits) from being included in XMP generation.
+
+MAJOR FIXES:
+1. ✅ Derivatives array now preserved through entire pipeline
+2. ✅ better-sqlite3 API usage corrected throughout
+3. ✅ Enhanced debug logging to diagnose issues
+4. ✅ Improved derivative detection for TIF/PSD files
+5. ✅ Fixed Visual Analysis table column widths
+
+========================================
+WHAT WAS BROKEN IN v0.4
+========================================
+
+Problem #1: Derivatives Lost in Group Structure
+- Derivatives were added to clusters in main.js (line 764)
+- But buildSimilarityGroups() in app.js wasn't preserving them
+- Result: mainRepDerivatives = 0 (no derivatives in XMP generation)
+
+Problem #2: Database API Mismatches
+- XMP Generator used async await with better-sqlite3 (synchronous library)
+- Personal data IPC handlers used wrong API pattern
+- Result: Runtime errors when loading personal data
+
+Problem #3: Derivative Detection Issues
+- TIF files not properly identified as derivatives
+- RED base TIF files incorrectly classified
+- PSD files sometimes missed
+
+========================================
+HOW IT'S FIXED IN v0.5
+========================================
+
+Fix #1: Preserve Derivatives in Group Structure (app.js)
+BEFORE:
+```
+const group = {
+  mainRep: mainRep,  // ❌ Lost derivatives
+  similarReps: similarReps,
+  ...
+};
+```
+
+AFTER:
+```
+const group = {
+  mainRep: {
+    ...mainRep,
+    derivatives: mainRep.derivatives || []  // ✅ PRESERVED!
+  },
+  similarReps: similarReps.map(sim => ({
+    ...sim,
+    cluster: {
+      ...sim.cluster,
+      derivatives: sim.cluster.derivatives || []  // ✅ PRESERVED!
+    }
+  })),
+  ...
+};
+```
+
+Fix #2: Correct better-sqlite3 API Usage
+BEFORE:
+```javascript
+const data = await this.db.get('SELECT...');  // ❌ Wrong (async on sync API)
+```
+
+AFTER:
+```javascript
+const data = this.db.prepare('SELECT...').get();  // ✅ Correct (sync API)
+```
+
+Fix #3: Enhanced Derivative Detection
+- RED base TIF pattern: /^[A-Z]\d{3}_[A-Z]\d{3}_[A-Z0-9]{6}_S\d{3}\.\d+$/i
+- Any TIF with suffixes (-Edit, -Pano, etc.) = derivative
+- PSD/PSB files ALWAYS derivatives
+
+Fix #4: Enhanced Debug Logging
+- Shows mainRepDerivatives count
+- Shows clusterDerivatives count
+- Shows cluster structure keys
+- Lists all files being processed
+
+========================================
+COMPLETE DATA FLOW (v0.5)
+========================================
+
+1. INGEST (fileManager.js)
+   ✅ Detects TIF/PSD derivatives
+   ✅ Stores in scanResults.derivatives Map
+   ✅ Excludes RED base TIF files
+
+2. PROCESS (main.js line 749-764)
+   ✅ Retrieves derivatives from Map/object
+   ✅ Adds derivatives array to each cluster
+   ✅ Sends processedClusters to frontend
+
+3. GROUP BUILDING (app.js line 1103-1120)
+   ✅ Spreads mainRep and preserves derivatives
+   ✅ Spreads similarReps clusters and preserves derivatives
+   ✅ Spreads allClusters and preserves derivatives
+
+4. XMP GENERATION (xmpGenerator.js line 75-82)
+   ✅ Collects from cluster.mainRep.derivatives
+   ✅ Also checks cluster.derivatives (fallback)
+   ✅ Collects from all similar cluster derivatives
+   ✅ Creates XMP for ALL files (RAW + TIF + PSD)
+
+========================================
+WHAT NOW WORKS IN v0.5
+========================================
+
+✅ ALL derivatives get XMP sidecars
+✅ PSD files included
+✅ TIF edits included  
+✅ Multi-level edits included (Edit-Edit-Edit)
+✅ Personal data loads from database correctly
+✅ Derivatives tracked through entire pipeline
+✅ Debug logs show complete file lists
+✅ Visual Analysis table properly aligned
+
+Example Log Output (v0.5):
+```
+Files collected for XMP generation {
+  totalFiles: 13,
+  mainRepFiles: 9,
+  mainRepDerivatives: 3,  ✅ (was 0 in v0.4)
+  clusterDerivatives: 3,
+  similarClusters: 1,
+  fileList: [
+    "_GP_4599-Pano.dng",
+    "_GP_4596.CR3", ...8 bracketed files...,
+    "_GP_4599-Pano-Edit-Edit-Edit.psd",  ✅ INCLUDED
+    "_GP_4599-Pano-Edit-Edit.tif",       ✅ INCLUDED
+    "_GP_4599-Pano-Edit.tif",            ✅ INCLUDED
+    "_GP_4604.CR3"  (similar cluster)
+  ]
+}
+
+XMP generation complete {
+  totalFiles: 13,
+  successCount: 13,  ✅ 100% success rate
+  failCount: 0
+}
+```
+
+========================================
+BUG FIXES FROM v0.4
+========================================
+
+✅ Fixed: Derivatives not included in XMP generation
+✅ Fixed: better-sqlite3 API usage in XMP Generator
+✅ Fixed: better-sqlite3 API usage in personal data handlers
+✅ Fixed: Derivative detection for TIF files with RED camera format
+✅ Fixed: Visual Analysis table column widths (300px instead of 400px)
+✅ Fixed: Map vs object handling for derivatives
+✅ Fixed: Keywords column missing width attribute
+
+========================================
+FILES MODIFIED IN v0.5
+========================================
+
+src/renderer/app.js:
+- Line 1103-1120: Preserve derivatives in group structure (CRITICAL)
+
+src/services/xmpGenerator.js:
+- Line 22: Fixed loadPersonalData() to use prepare().get()
+- Line 75-82: Added cluster.derivatives fallback check
+- Line 117-134: Enhanced debug logging with file lists
+
+src/main/main.js:
+- Line 749-756: Improved derivatives Map/object handling
+- Line 1072-1123: Fixed personal data IPC handlers API usage
+
+src/services/fileManager.js:
+- Line 102-133: Enhanced derivative detection with RED pattern
+
+src/renderer/index.html:
+- Line 175: Added width to Keywords column
+
+src/renderer/styles.css:
+- Line 355, 382: Updated column 2 width from 400px to 300px
+
+========================================
+TESTING CHECKLIST
+========================================
+
+To verify v0.5 fixes:
+
+1. ✅ Ingest folder with RAW + TIF/PSD derivatives
+2. ✅ Check logs: derivatives Map should show files
+3. ✅ Process images
+4. ✅ Check logs: clusters should have derivatives array
+5. ✅ Run AI Analysis
+6. ✅ Generate XMP
+7. ✅ Check logs: mainRepDerivatives should show count > 0
+8. ✅ Check logs: fileList should include TIF/PSD files
+9. ✅ Verify XMP files created for ALL files:
+   - RAW files (.CR2, .CR3, .NEF, .ARW, .DNG)
+   - TIF files (*-Edit.tif, *-Pano.tif, etc.)
+   - PSD files (*-Edit.psd, *-Edit-Edit.psd, etc.)
+
+Expected Results:
+- mainRepDerivatives: 3, 5, 8 (not 0!)
+- XMP files: 13/13, 20/20, etc. (100% success rate)
+- All TIF/PSD files have matching .xmp sidecars
+
+========================================
+KNOWN ISSUES (v0.5)
+========================================
+
+None reported. All critical bugs from v0.4 are fixed.
+
+If you still see mainRepDerivatives: 0:
+1. Check app.log for "Cluster structure debug" entries
+2. Verify derivatives are being detected during ingest
+3. Ensure derivatives Map is populated in scan results
+4. Check that processedClusters have derivatives arrays
+
+========================================
+SYSTEM REQUIREMENTS
+========================================
+
+Same as v0.4:
+- Node.js 18+
+- Electron 27+
+- ExifTool
+- Sharp
+- Python 3.8+ (CLIP service)
+- Ollama (optional)
+- Google Vision API key (optional)
+
+macOS: Monterey or later
+Windows: Windows 10/11
+Linux: Ubuntu 20.04+
+
+========================================
+UPGRADE FROM v0.4
+========================================
+
+v0.5 is a drop-in replacement for v0.4:
+1. Extract zip file over existing installation
+2. No database changes required
+3. No config changes required
+4. Personal data preserved
+5. Just restart the app
+
+All your data (personal info, settings) will be preserved.
+
+========================================
+VERSION HISTORY
+========================================
+
+v0.1 (Initial Release):
+- Basic ingest and processing
+- Timestamp-based clustering
+- EXIF extraction
+
+v0.2 (Visual Analysis):
+- CLIP similarity detection
+- Visual clustering
+- Pagination
+
+v0.3 (AI Analysis):
+- Ollama/Google Vision integration
+- AI metadata generation
+- XMP file creation
+
+v0.4 (Personal Data):
+- Personal Data tab
+- Dynamic XMP with creator info
+- Improved AI keywords
+- Enhanced derivative detection
+
+v0.5 (Bug Fixes): ← CURRENT
+- Fixed derivatives not included in XMP
+- Fixed better-sqlite3 API usage
+- Enhanced debug logging
+- Improved derivative detection
+- Fixed table column widths
+
+========================================
+CHANGELOG v0.4 → v0.5
+========================================
+
+CRITICAL FIXES:
++ Derivatives now properly preserved through group building
++ better-sqlite3 API corrected in XMP Generator
++ better-sqlite3 API corrected in personal data handlers
++ Enhanced derivative detection with RED pattern exclusion
++ Visual Analysis table column widths fixed
+
+IMPROVEMENTS:
++ Enhanced debug logging with complete file lists
++ Cluster structure inspection in logs
++ Map/object dual handling for derivatives
++ Explicit derivative preservation with spread operators
++ Keywords column width added
+
+BUG FIXES:
++ mainRepDerivatives now shows correct count (not 0)
++ All TIF/PSD derivatives included in XMP generation
++ Personal data loads without errors
++ RED base TIF files correctly excluded
++ Column alignment fixed in Visual Analysis tab
+
+========================================
+NEXT STEPS (v0.6)
+========================================
+
+Planned improvements:
+- Batch XMP generation for all clusters at once
+- Export metadata to CSV
+- Import metadata from CSV
+- Custom keyword templates
+- AI model selection in UI
+- Metadata presets/templates
+- Progress indicators for XMP generation
+
+========================================
+SUPPORT
+========================================
+
+GitHub: https://github.com/PGrossman/Lightroom-Meta-Tagger
+Issues: https://github.com/PGrossman/Lightroom-Meta-Tagger/issues
+
+For bug reports, please include:
+1. Version number (v0.5)
+2. Relevant log excerpts from app.log
+3. Steps to reproduce
+4. Expected vs actual behavior
+
+========================================
+CREDITS
+========================================
+
+Developer: Philip Ethan Grossman
+Built with: Electron, Node.js, better-sqlite3, Sharp, ExifTool
+AI Services: Ollama (Qwen2.5-VL), Google Vision API
+Image Analysis: CLIP (Python/FastAPI)
+
+Special thanks to all testers who identified the derivative issues in v0.4!
+
+========================================
+LICENSE
+========================================
+
+See LICENSE file for details.
+
+========================================
+
+

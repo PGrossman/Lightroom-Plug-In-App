@@ -1,0 +1,514 @@
+# Technical Architecture - Lightroom XMP Generator (CORRECTED)
+
+## System Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Electron Main Process                     │
+├─────────────────────────────────────────────────────────────┤
+│  ┌────────────────┐  ┌──────────────┐  ┌────────────────┐  │
+│  │ File Manager   │  │ Job Queue    │  │ Config Manager │  │
+│  │ - Import data  │  │ - Batch ctrl │  │ - Settings     │  │
+│  │ - Parse groups │  │ - Progress   │  │ - Thresholds   │  │
+│  └────────────────┘  └──────────────┘  └────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Processing Pipeline                       │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│  INPUT: Phase 1 Attribute Groups (from Lightroom/metadata)   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ Group 1: Parent A.CR2 + 5 children                   │   │
+│  │ Group 2: Parent B.CR2 + 3 children                   │   │
+│  │ Group 3: Parent C.CR2 + 7 children                   │   │
+│  │ ... (13 groups total)                                │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                               │
+│  Step 1: Extract Parent Images Only                          │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ • Extract parent image paths from each group         │   │
+│  │ • Validate parent files exist                        │   │
+│  │ • Result: Array of 13 parent images                  │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                               │
+│  Step 2: Thumbnail Generation (Parents Only)                 │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ • Load each parent CR2/CR3 file                      │   │
+│  │ • Extract embedded preview OR decode RAW             │   │
+│  │ • Generate 2 sizes:                                  │   │
+│  │   - Large: 400px (for representative display)        │   │
+│  │   - Medium: 200px (for similar parents display)      │   │
+│  │ • Save thumbnails to temp directory                  │   │
+│  │ • NO thumbnails generated for children               │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                               │
+│  Step 3: Perceptual Hash Generation                          │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ • Generate pHash for each parent image               │   │
+│  │ • Use 16-bit hash for accuracy                       │   │
+│  │ • Store hash with parent metadata                    │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                               │
+│  Step 4: Parent-to-Parent Similarity Detection               │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ • Compare ALL parent images against each other       │   │
+│  │ • Calculate Hamming distance (N × N comparison)      │   │
+│  │ • Identify similar parents (distance < threshold)    │   │
+│  │ • Cluster similar parents together                   │   │
+│  │ • Select best representative per cluster             │   │
+│  │ • Calculate similarity scores (%)                    │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                               │
+│  Step 5: Super-Group Formation                               │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ • For each similarity cluster:                       │   │
+│  │   - Assign representative parent                     │   │
+│  │   - List other similar parents with scores           │   │
+│  │   - Aggregate ALL children from similar parents      │   │
+│  │   - Store file paths only for children               │   │
+│  │ • Result: Fewer super-groups than original groups    │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                               │
+│  OUTPUT: Super-Groups for Results Page                       │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ Super-Group 1:                                       │   │
+│  │   Representative: Parent A (thumbnail)               │   │
+│  │   Similar: Parent B (97%, thumbnail), Parent E (96%)│   │
+│  │   Children: 15 files (paths only)                    │   │
+│  │                                                       │   │
+│  │ Super-Group 2:                                       │   │
+│  │   Representative: Parent C (thumbnail)               │   │
+│  │   Similar: None                                      │   │
+│  │   Children: 7 files (paths only)                     │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  Electron Renderer Process                   │
+├─────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │              Results Page Display                     │  │
+│  │                                                        │  │
+│  │  For each Super-Group:                                │  │
+│  │    • Show representative parent (large thumbnail)     │  │
+│  │    • Show similar parents (medium thumbnails + %)     │  │
+│  │    • List children count (no thumbnails)              │  │
+│  │    • Provide Confirm/Split actions                    │  │
+│  └──────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Component Specifications
+
+### 1. File Manager Service
+
+**Responsibilities**
+- Import Phase 1 attribute grouping data
+- Parse parent-child relationships
+- Validate file existence
+- Extract parent images for processing
+
+**Key Methods**
+```javascript
+async importAttributeGroups(dataPath)
+async parseGroups(rawData)
+async validateParentFiles(parents)
+async extractParentImages(groups)
+```
+
+**Data Structure - Input**
+```javascript
+// Expected input format from Phase 1
+{
+  attributeGroups: [
+    {
+      id: "group_1",
+      parent: {
+        path: "/path/to/_MG_9194.CR2",
+        metadata: { date: "2025-01-15", location: "..." }
+      },
+      children: [
+        "/path/to/_MG_9194-adj.tif",
+        "/path/to/_MG_9194-adj-Edit.tif",
+        // ... more children
+      ]
+    },
+    // ... more groups
+  ]
+}
+```
+
+### 2. Thumbnail Generator Service
+
+**Responsibilities**
+- Generate thumbnails ONLY for parent images
+- Create two sizes: 400px (large) and 200px (medium)
+- Extract embedded previews when possible (faster)
+- Fallback to full RAW decode if needed
+
+**Key Methods**
+```javascript
+async generateParentThumbnails(parentImages)
+async extractPreview(rawPath)
+async createThumbnail(imagePath, size)
+async saveThumbnail(imageData, path, size)
+```
+
+**Performance Optimizations**
+- Use embedded preview from RAW (much faster than full decode)
+- Cache thumbnails to avoid regeneration
+- Parallel processing with worker threads
+- Skip children entirely (major time savings)
+
+### 3. Similarity Detector Service
+
+**Responsibilities**
+- Generate perceptual hashes for parent images
+- Compare ALL parents against each other
+- Calculate Hamming distances
+- Cluster similar parents
+- Select representative from each cluster
+
+**Key Methods**
+```javascript
+async generateParentHashes(parentImages)
+async compareAllParents(parentHashes)
+async clusterSimilarParents(comparisonMatrix, threshold)
+async selectRepresentative(cluster)
+async calculateSimilarityScore(hash1, hash2)
+```
+
+**Algorithm: Parent-to-Parent Comparison**
+```
+1. Generate pHash for all 13 parent images
+2. Create similarity matrix (13 × 13):
+   For i = 0 to 12:
+     For j = i+1 to 12:
+       distance = hammingDistance(hash[i], hash[j])
+       if distance < threshold:
+         mark parents i and j as similar
+3. Cluster similar parents using connected components
+4. For each cluster:
+   - Select representative (best quality/exposure)
+   - Store other parents as "similar" with scores
+5. Return super-groups (fewer than 13 original groups)
+```
+
+**Hamming Distance Threshold**
+- Default: 8 bits (configurable)
+- Lower = stricter matching (only nearly identical images)
+- Higher = looser matching (more images grouped together)
+
+### 4. Super-Group Builder Service
+
+**Responsibilities**
+- Build final super-groups from similarity clusters
+- Aggregate children from similar parents
+- Calculate similarity percentages
+- Prepare data for Results Page display
+
+**Key Methods**
+```javascript
+async buildSuperGroups(similarityClusters, attributeGroups)
+async aggregateChildren(parentPaths, attributeGroups)
+async calculateSimilarityPercent(hammingDistance)
+```
+
+**Data Structure - Output**
+```javascript
+{
+  superGroups: [
+    {
+      id: "sg_1",
+      representativeParent: {
+        path: "/path/to/parent_A.CR2",
+        thumbnailLarge: "/thumbnails/400px/parent_A.jpg",
+        thumbnailMedium: "/thumbnails/200px/parent_A.jpg",
+        metadata: { ... },
+        originalGroupId: "group_1"
+      },
+      similarParents: [
+        {
+          path: "/path/to/parent_B.CR2",
+          thumbnailMedium: "/thumbnails/200px/parent_B.jpg",
+          similarityScore: 97, // percentage
+          hammingDistance: 2,
+          originalGroupId: "group_2",
+          childCount: 3
+        },
+        {
+          path: "/path/to/parent_E.CR2",
+          thumbnailMedium: "/thumbnails/200px/parent_E.jpg",
+          similarityScore: 96,
+          hammingDistance: 3,
+          originalGroupId: "group_5",
+          childCount: 7
+        }
+      ],
+      allChildren: [
+        // Aggregated from all similar parents
+        "/path/to/_MG_9194-adj.tif",
+        "/path/to/_MG_9194-adj-Edit.tif",
+        "/path/to/_MG_9195-adj.tif",
+        // ... 15 total children from A, B, and E
+      ],
+      totalParents: 3,
+      totalChildren: 15,
+      totalImages: 18
+    },
+    {
+      id: "sg_2",
+      representativeParent: {
+        path: "/path/to/parent_C.CR2",
+        thumbnailLarge: "/thumbnails/400px/parent_C.jpg",
+        thumbnailMedium: "/thumbnails/200px/parent_C.jpg",
+        metadata: { ... },
+        originalGroupId: "group_3"
+      },
+      similarParents: [], // No similar parents found
+      allChildren: [
+        // 7 children from C only
+      ],
+      totalParents: 1,
+      totalChildren: 7,
+      totalImages: 8
+    }
+  ],
+  summary: {
+    originalGroups: 13,
+    superGroups: 8, // Reduced from 13
+    totalImages: 150,
+    reductionPercent: 38 // (13-8)/13 * 100
+  }
+}
+```
+
+## Results Page UI Specification
+
+### Layout Components
+
+**Super-Group Card**
+```html
+<div class="super-group-card">
+  <!-- Representative Parent -->
+  <div class="representative-section">
+    <h3>Representative Parent</h3>
+    <img src="{thumbnailLarge}" class="parent-large" />
+    <p class="file-name">{filename}</p>
+  </div>
+  
+  <!-- Similar Parents (if any) -->
+  <div class="similar-parents-section" *ngIf="similarParents.length > 0">
+    <h3>Similar Parents Found ({similarParents.length})</h3>
+    <div class="similar-grid">
+      <div *ngFor="parent of similarParents" class="similar-parent">
+        <img src="{parent.thumbnailMedium}" class="parent-medium" />
+        <p class="similarity-score">{parent.similarityScore}% match</p>
+        <p class="file-name">{parent.filename}</p>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Children Summary (no thumbnails) -->
+  <div class="children-section">
+    <h3>Child Images</h3>
+    <p class="child-count">
+      {totalChildren} files
+      <span *ngIf="similarParents.length > 0">
+        ({childBreakdown})
+      </span>
+    </p>
+    <details>
+      <summary>View file list</summary>
+      <ul class="file-list">
+        <li *ngFor="child of allChildren">{child.filename}</li>
+      </ul>
+    </details>
+  </div>
+  
+  <!-- Action Buttons -->
+  <div class="actions">
+    <button class="confirm-btn" (click)="confirmMatch()">
+      ✓ Confirm Match
+    </button>
+    <button class="split-btn" (click)="splitGroup()">
+      Split Group
+    </button>
+  </div>
+</div>
+```
+
+### CSS Specifications
+```css
+.parent-large {
+  width: 400px;
+  height: auto;
+  border: 2px solid #333;
+  border-radius: 8px;
+}
+
+.parent-medium {
+  width: 200px;
+  height: auto;
+  border: 1px solid #666;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.parent-medium:hover {
+  border-color: #0066cc;
+  box-shadow: 0 0 10px rgba(0, 102, 204, 0.3);
+}
+
+.similarity-score {
+  font-weight: bold;
+  color: #0066cc;
+  font-size: 14px;
+}
+
+.similar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 20px;
+}
+
+.file-list {
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 12px;
+}
+```
+
+### User Interactions
+
+**Confirm Match**
+- Validates the similarity grouping
+- Proceeds to AI analysis phase (Step 3)
+- Marks super-group as approved
+
+**Split Group**
+- Removes selected similar parent from cluster
+- Creates new super-group for split parent
+- Allows user to correct AI mistakes
+
+**View Full Image**
+- Click any parent thumbnail for full-size preview
+- Shows comparison view side-by-side
+- Helps user verify similarity accuracy
+
+## Data Flow (Corrected)
+
+### Complete Processing Pipeline
+
+```
+1. Import Phase 1 attribute groups (13 groups with parent+children)
+   ↓
+2. Extract parent images only (13 parents)
+   ↓
+3. Generate thumbnails for all parents (NO children)
+   ↓
+4. Generate pHash for all parents
+   ↓
+5. Compare parents against each other (N × N)
+   ↓
+6. Cluster similar parents (distance < threshold)
+   ↓
+7. Build super-groups:
+   - Select representative per cluster
+   - List similar parents with scores
+   - Aggregate children from all similar parents
+   ↓
+8. Display Results Page with thumbnails for visual verification
+   ↓
+9. User confirms or splits groups
+   ↓
+10. Proceed to AI analysis (Step 3) - only analyze representatives
+```
+
+## Configuration Management
+
+**Config File Structure** (`config.json`)
+```json
+{
+  "version": "1.0.0",
+  "similarity": {
+    "enabled": true,
+    "hammingThreshold": 8,
+    "algorithm": "phash",
+    "hashSize": 16,
+    "minClusterSize": 2
+  },
+  "thumbnails": {
+    "generateForParentsOnly": true,
+    "sizes": {
+      "large": 400,
+      "medium": 200
+    },
+    "quality": 90,
+    "format": "jpg"
+  },
+  "processing": {
+    "useEmbeddedPreview": true,
+    "parallelWorkers": 4,
+    "cacheResults": true
+  },
+  "ui": {
+    "defaultView": "grid",
+    "showSimilarityScores": true,
+    "showFileNames": true,
+    "enableFullImagePreview": true
+  }
+}
+```
+
+## Performance Targets
+
+- **Thumbnail Generation**: < 1s per parent (using embedded preview)
+- **pHash Generation**: < 0.5s per parent
+- **Similarity Comparison**: < 5s for 13 parents (169 comparisons)
+- **Super-Group Building**: < 1s
+- **Total Processing Time**: < 30s for 13 parent images
+- **NO processing time for children** (major optimization)
+
+## Testing Strategy
+
+### Unit Tests
+- Parent extraction from attribute groups
+- Thumbnail generation (two sizes)
+- pHash generation and comparison
+- Hamming distance calculation
+- Clustering algorithm accuracy
+
+### Integration Tests
+- Full pipeline from import to super-group output
+- Thumbnail caching and retrieval
+- Results page data rendering
+- User actions (confirm/split)
+
+### Visual Verification Tests
+- Load sample parent images with known similarity
+- Verify clustering accuracy
+- Test threshold sensitivity
+- Ensure thumbnails display correctly
+
+### Test Dataset
+```
+test-data/
+├── attribute-groups.json      # Sample Phase 1 output
+├── parents/
+│   ├── similar_set_1/
+│   │   ├── parent_A.CR2      # Nearly identical
+│   │   ├── parent_B.CR2      # Same subject, slight angle
+│   │   └── parent_C.CR2      # Same subject, different exposure
+│   ├── similar_set_2/
+│   │   ├── parent_D.CR2
+│   │   └── parent_E.CR2
+│   └── unique/
+│       ├── parent_F.CR2      # Should not cluster with others
+│       └── parent_G.CR2
+└── expected-output.json       # Expected super-groups
+```

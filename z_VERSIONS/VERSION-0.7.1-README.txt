@@ -1,0 +1,29 @@
+Lightroom Meta Tagger v0.7.1 - Clustering Fixes
+
+## What's Fixed in v0.7.1:
+- Fixed exifExtractor.js to handle file objects vs path strings
+- Fixed fileManager.js clustering method to handle return values properly
+- Added proper error handling and validation
+- Resolved [object Object] errors in exiftool commands
+- Resolved .map is not a function errors in clustering
+- Improved timestamp extraction and clustering reliability
+
+## Files Included:
+- Complete source code (src/)
+- Configuration files (config.json, package.json)
+- Documentation (README.md, setup guides)
+- Scripts and utilities
+- Test files
+
+## Installation:
+1. Extract the zip file
+2. Run 'npm install' to install dependencies
+3. Run 'npm start' to launch the application
+
+## Key Improvements:
+- Robust error handling prevents crashes
+- Better logging for debugging
+- Defensive programming practices
+- Cleaner code structure
+
+Created: Wed Oct 15 10:27:51 EDT 2025

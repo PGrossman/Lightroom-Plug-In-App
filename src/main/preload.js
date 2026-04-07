@@ -29,7 +29,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Settings
   getAllSettings: () => ipcRenderer.invoke('get-all-settings'),
-  saveTimestampThreshold: (value) => ipcRenderer.invoke('save-timestamp-threshold', value),
   
   // CLIP service management
   checkClipService: () => ipcRenderer.invoke('check-clip-service'),
@@ -69,12 +68,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('clip-setup-progress', (event, data) => callback(data));
   },
 
-  // Lightroom job listener
-  onLightroomJobLoaded: (callback) => {
-    ipcRenderer.on('lightroom-job-loaded', (event, data) => callback(data));
-  },
-
-  // Lightroom response writing
-  writeLightroomResponse: (data) => ipcRenderer.invoke('write-lightroom-response', data)
+  // Lightroom plugin image handoff
+  onLightroomImagesLoaded: (callback) => {
+    ipcRenderer.on('lightroom-images-loaded', (event, data) => callback(data));
+  }
 });
 

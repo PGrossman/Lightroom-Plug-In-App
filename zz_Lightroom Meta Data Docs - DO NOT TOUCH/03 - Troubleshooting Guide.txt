@@ -1,0 +1,689 @@
+# Troubleshooting Guide
+
+## Common Issues and Solutions
+
+### 1. Ollama Connection Issues
+
+**Symptom**: "Cannot connect to Ollama" or timeout errors
+
+**Solutions**:
+```bash
+# Check if Ollama is running
+curl http://localhost:11434/api/tags
+
+# Start Ollama if not running
+ollama serve
+
+# Verify model is installed
+ollama list
+
+# Install vision model if missing
+ollama pull llava:latest
+# or
+ollama pull bakllava:latest
+```
+
+**Code Check**:
+```javascript
+// Verify endpoint in config.json
+{
+  "ollama": {
+    "endpoint": "http://localhost:11434",  // Check this matches your setup
+    "model": "llava:latest"
+  }
+}
+```
+
+### 2. RAW Conversion Failures
+
+**Symptom**: "Cannot decode CR2/CR3 file" or "dcraw not found"
+
+**Solutions**:
+
+**Option A - Install dcraw** (recommended for full RAW processing):
+```bash
+# macOS
+brew install dcraw
+
+# Verify installation
+which dcraw
+```
+
+**Option B - Use exiftool** (for preview extraction):
+```bash
+# macOS
+brew install exiftool
+
+# Verify installation
+which exiftool
+```
+
+**Option C - Use libraw via node**:
+```bash
+npm install node-libraw
+```
+
+**Code Check**:
+```javascript
+// In imageProcessor.js, verify paths
+const { execFile } = require('child_process');
+
+// Test manually
+execFile('dcraw', ['--version'], (error, stdout) => {
+  if (error) {
+    console.error('dcraw not found:', error);
+  } else {
+    console.log('dcraw version:', stdout);
+  }
+});
+```
+
+### 3. Google Vision API Errors
+
+**Symptom**: "Authentication failed" or "API key invalid"
+
+**Solutions**:
+
+**Check API Key Setup**:
+```javascript
+// Option 1: Using service account JSON
+{
+  "googleVision": {
+    "apiKey": "/path/to/service-account-key.json",
+    "enabled": true
+  }
+}
+
+// Option 2: Using environment variable
+// Set in terminal before running app:
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account-key.json"
+```
+
+**Verify API is Enabled**:
+1. Go to Google Cloud Console
+2. Enable "Cloud Vision API"
+3. Create service account with Vision API permissions
+4. Download JSON key file
+
+**Test API Connection**:
+```javascript
+const vision = require('@google-cloud/vision');
+const client = new vision.ImageAnnotatorClient({
+  keyFilename: '/path/to/key.json'
+});
+
+// Test with simple request
+client.labelDetection('/path/to/test/image.jpg')
+  .then(results => console.log('API works!', results))
+  .catch(error => console.error('API error:', error));
+```
+
+### 4. Perceptual Hash / Similarity Issues
+
+**Symptom**: "All images grouped together" or "No similar images found"
+
+**Solutions**:
+
+**Adjust Hamming Threshold**:
+```json
+{
+  "similarity": {
+    "hammingThreshold": 8  // Try different values: 5-15
+  }
+}
+```
+
+**Threshold Guidelines**:
+- `0-5`: Very strict (nearly identical images only)
+- `6-10`: Moderate (same subject, slight variations) - **RECOMMENDED**
+- `11-15`: Loose (similar scenes)
+- `16+`: Too loose (unrelated images grouped)
+
+**Test with Sample Images**:
+```javascript
+const SimilarityDetector = require('./src/services/similarityDetector');
+const detector = new SimilarityDetector({ similarity: { hammingThreshold: 8 }});
+
+async function test() {
+  const hash1 = await detector.generateHash('image1.jpg');
+  const hash2 = await detector.generateHash('image2.jpg');
+  const distance = detector.calculateDistance(hash1, hash2);
+  
+  console.log('Hash 1:', hash1);
+  console.log('Hash 2:', hash2);
+  console.log('Distance:', distance);
+  console.log('Similar?:', distance <= 8);
+}
+
+test();
+```
+
+### 5. XMP Files Not Recognized by Lightroom
+
+**Symptom**: Lightroom doesn't import metadata from XMP files
+
+**Solutions**:
+
+**Verify XMP Naming**:
+```
+Correct:
+  _MG_9194.CR2
+  _MG_9194.xmp     ✓
+
+Incorrect:
+  _MG_9194.CR2
+  _MG_9194.CR2.xmp ✗
+```
+
+**Validate XMP Structure**:
+```bash
+# Use xmllint to validate
+xmllint --noout _MG_9194.xmp
+
+# Should return nothing if valid
+# If invalid, will show errors
+```
+
+**Check XMP Encoding**:
+```javascript
+// Ensure UTF-8 encoding
+await fs.writeFile(xmpPath, xmpContent, { encoding: 'utf8' });
+```
+
+**Lightroom Import Process**:
+1. In Lightroom: Right-click image
+2. Select "Metadata" → "Read Metadata from File"
+3. Or: "Metadata" → "Read Metadata from Files" for batch
+
+**Force Lightroom Refresh**:
+```bash
+# Sometimes Lightroom caches metadata
+# Restart Lightroom Classic to clear cache
+```
+
+### 6. Memory Issues
+
+**Symptom**: "JavaScript heap out of memory" or app crashes
+
+**Solutions**:
+
+**Increase Node Memory Limit**:
+```bash
+# In package.json scripts:
+{
+  "scripts": {
+    "start": "NODE_OPTIONS='--max-old-space-size=8192' electron ."
+  }
+}
+
+# Or run directly
+NODE_OPTIONS='--max-old-space-size=8192' npm start
+```
+
+**Reduce Batch Size**:
+```json
+{
+  "processing": {
+    "batchSize": 5,  // Reduce from 10 to 5
+    "parallelWorkers": 2  // Reduce parallelism
+  }
+}
+```
+
+**Clean Up Temp Files Regularly**:
+```javascript
+// In imageProcessor.js
+async processImage(imagePath) {
+  const jpgPath = await this.rawToJpg(imagePath);
+  
+  try {
+    // ... process image
+  } finally {
+    // Always cleanup, even if processing fails
+    await fs.unlink(jpgPath).catch(() => {});
+  }
+}
+```
+
+### 7. Performance Issues (Slow Processing)
+
+**Symptom**: Processing takes too long per image
+
+**Optimizations**:
+
+**Use Embedded Previews**:
+```json
+{
+  "processing": {
+    "useEmbeddedPreview": true,  // Much faster than full decode
+    "maxImageSize": 1024  // Reduce if still slow
+  }
+}
+```
+
+**Parallel Processing**:
+```javascript
+// Process images in batches
+const batchSize = 5;
+for (let i = 0; i < images.length; i += batchSize) {
+  const batch = images.slice(i, i + batchSize);
+  await Promise.all(batch.map(img => processImage(img)));
+}
+```
+
+**Monitor Performance**:
+```javascript
+console.time('raw-conversion');
+await imageProcessor.rawToJpg(imagePath);
+console.timeEnd('raw-conversion');
+
+console.time('ollama-analysis');
+await ollamaService.analyzeImage(jpgPath);
+console.timeEnd('ollama-analysis');
+```
+
+**Expected Times** (M4 Pro):
+- Preview extraction: 0.5-1s per image
+- Full RAW decode: 2-5s per image
+- Ollama analysis: 5-15s per image
+- Google Vision: 1-3s per image
+- XMP generation: <0.1s per file
+
+### 8. Derivative Detection Issues
+
+**Symptom**: Derivatives not being identified correctly
+
+**Debug Pattern Matching**:
+```javascript
+// Add logging to fileManager.js
+getBaseFilename(filename) {
+  const nameWithoutExt = path.parse(filename).name;
+  const baseName = nameWithoutExt.split('-')[0];
+  
+  console.log(`File: ${filename}`);
+  console.log(`  Without ext: ${nameWithoutExt}`);
+  console.log(`  Base: ${baseName}`);
+  
+  return baseName;
+}
+```
+
+**Test Pattern Matching**:
+```javascript
+// Create test cases
+const testFiles = [
+  '_MG_9194.CR2',           // Base
+  '_MG_9194-adj.tif',       // Derivative
+  '_MG_9194-adj-Edit.tif',  // Derivative
+  'IMG_1234.CR2',           // Different base
+  'IMG_1234-HDR.jpg'        // Derivative of IMG_1234
+];
+
+const fm = new FileManager();
+testFiles.forEach(file => {
+  console.log(`${file} -> ${fm.getBaseFilename(file)}`);
+  console.log(`  Is base? ${fm.isBaseImage(file)}`);
+});
+```
+
+**Handle Edge Cases**:
+```javascript
+// What if filename has multiple hyphens?
+'_MG_9194-adj-Edit-2-Final.tif'
+
+// Solution: Only split on FIRST hyphen
+getBaseFilename(filename) {
+  const nameWithoutExt = path.parse(filename).name;
+  const firstHyphenIndex = nameWithoutExt.indexOf('-');
+  
+  if (firstHyphenIndex === -1) {
+    return nameWithoutExt;
+  }
+  
+  return nameWithoutExt.substring(0, firstHyphenIndex);
+}
+```
+
+### 9. Ollama Response Parsing Errors
+
+**Symptom**: "Failed to parse Ollama response" or invalid JSON
+
+**Solutions**:
+
+**Improve Prompt**:
+```javascript
+const prompt = `You must respond with ONLY valid JSON, nothing else. No explanations, no markdown, just JSON.
+
+Analyze this image and respond with this exact structure:
+{
+  "subjects": ["subject1", "subject2"],
+  "scene_type": "landscape",
+  "keywords": ["keyword1", "keyword2"],
+  "description": "description here",
+  "confidence": 0.95
+}
+
+JSON response:`;
+```
+
+**Better Parsing**:
+```javascript
+parseResponse(responseText) {
+  try {
+    // Remove common issues
+    let cleaned = responseText.trim();
+    
+    // Remove markdown code blocks
+    cleaned = cleaned.replace(/```json\n?/g, '');
+    cleaned = cleaned.replace(/```\n?/g, '');
+    
+    // Remove any text before first {
+    const firstBrace = cleaned.indexOf('{');
+    if (firstBrace > 0) {
+      cleaned = cleaned.substring(firstBrace);
+    }
+    
+    // Remove any text after last }
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (lastBrace !== -1) {
+      cleaned = cleaned.substring(0, lastBrace + 1);
+    }
+    
+    const parsed = JSON.parse(cleaned);
+    
+    // Validate and provide defaults
+    return {
+      subjects: parsed.subjects || [],
+      scene_type: parsed.scene_type || 'general',
+      keywords: parsed.keywords || [],
+      description: parsed.description || 'No description available',
+      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.8
+    };
+    
+  } catch (error) {
+    console.error('Raw response:', responseText);
+    throw new Error(`Parse failed: ${error.message}`);
+  }
+}
+```
+
+**Fallback Strategy**:
+```javascript
+async analyzeImage(imagePath) {
+  try {
+    return await this.analyzeWithStructuredPrompt(imagePath);
+  } catch (error) {
+    console.warn('Structured prompt failed, trying simple prompt');
+    return await this.analyzeWithSimplePrompt(imagePath);
+  }
+}
+
+async analyzeWithSimplePrompt(imagePath) {
+  // Simple prompt that just asks for description
+  // Then manually structure the response
+  const response = await this.ollama.generate({
+    prompt: "Describe this image in detail.",
+    images: [imageBase64]
+  });
+  
+  // Extract keywords from description
+  const keywords = this.extractKeywords(response);
+  
+  return {
+    subjects: [],
+    scene_type: 'general',
+    keywords: keywords,
+    description: response,
+    confidence: 0.75
+  };
+}
+```
+
+### 10. Electron IPC Issues
+
+**Symptom**: Renderer process can't communicate with main process
+
+**Solution - Proper IPC Setup**:
+
+**Main Process** (`src/main/main.js`):
+```javascript
+const { app, BrowserWindow, ipcMain } = require('electron');
+
+ipcMain.handle('process-directory', async (event, dirPath) => {
+  try {
+    const results = await processingCoordinator.processDirectory(dirPath);
+    return { success: true, results };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-config', async () => {
+  return configManager.getConfig();
+});
+
+ipcMain.handle('save-config', async (event, newConfig) => {
+  return configManager.saveConfig(newConfig);
+});
+```
+
+**Preload Script** (`src/main/preload.js`):
+```javascript
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  processDirectory: (dirPath) => ipcRenderer.invoke('process-directory', dirPath),
+  getConfig: () => ipcRenderer.invoke('get-config'),
+  saveConfig: (config) => ipcRenderer.invoke('save-config', config),
+  
+  onProgress: (callback) => {
+    ipcRenderer.on('progress', (event, data) => callback(data));
+  }
+});
+```
+
+**Renderer Process** (`src/renderer/app.js`):
+```javascript
+// Use the exposed API
+async function startProcessing() {
+  const dirPath = document.getElementById('directory').value;
+  const result = await window.electronAPI.processDirectory(dirPath);
+  
+  if (result.success) {
+    console.log('Processing complete:', result.results);
+  } else {
+    console.error('Processing failed:', result.error);
+  }
+}
+
+// Listen for progress updates
+window.electronAPI.onProgress((data) => {
+  updateProgressBar(data.percent);
+});
+```
+
+## Debugging Tips
+
+### Enable Verbose Logging
+
+```javascript
+// Create a logger utility
+// src/utils/logger.js
+const winston = require('winston');
+
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.printf(({ timestamp, level, message, ...meta }) => {
+      return `${timestamp} [${level}]: ${message} ${Object.keys(meta).length ? JSON.stringify(meta) : ''}`;
+    })
+  ),
+  transports: [
+    new winston.transports.File({ filename: 'app.log' }),
+    new winston.transports.Console()
+  ]
+});
+
+module.exports = logger;
+```
+
+**Use in Services**:
+```javascript
+const logger = require('../utils/logger');
+
+class MyService {
+  async processImage(imagePath) {
+    logger.info('Processing image', { imagePath });
+    
+    try {
+      const result = await this.analyze(imagePath);
+      logger.info('Analysis complete', { imagePath, result });
+      return result;
+    } catch (error) {
+      logger.error('Analysis failed', { imagePath, error: error.message });
+      throw error;
+    }
+  }
+}
+```
+
+### Electron DevTools
+
+**Enable DevTools in Main Process**:
+```javascript
+// src/main/main.js
+function createWindow() {
+  const win = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+
+  // Open DevTools automatically in development
+  if (process.env.NODE_ENV === 'development') {
+    win.webContents.openDevTools();
+  }
+}
+```
+
+### Test Individual Components
+
+```javascript
+// scripts/test-components.js
+// Run individual service tests without full app
+
+async function testOllama() {
+  const OllamaService = require('./src/services/ollamaService');
+  const config = require('./config.json');
+  
+  const ollama = new OllamaService(config);
+  
+  const available = await ollama.checkAvailability();
+  console.log('Ollama available:', available);
+  
+  if (available) {
+    const result = await ollama.analyzeImage('./test-images/sample.jpg');
+    console.log('Analysis result:', JSON.stringify(result, null, 2));
+  }
+}
+
+async function testFileManager() {
+  const FileManager = require('./src/services/fileManager');
+  const fm = new FileManager();
+  
+  const results = await fm.scanDirectory('./test-images');
+  console.log('Base images:', results.baseImages);
+  console.log('Derivatives:', Array.from(results.derivatives.entries()));
+}
+
+// Run tests
+testOllama().catch(console.error);
+testFileManager().catch(console.error);
+```
+
+## Getting Help
+
+### Logs to Collect
+
+When reporting issues, provide:
+
+1. **Application logs** (`app.log`)
+2. **Error messages** (complete stack traces)
+3. **Configuration** (`config.json` - remove API keys!)
+4. **System info**:
+```javascript
+const os = require('os');
+console.log('Platform:', os.platform());
+console.log('Arch:', os.arch());
+console.log('Node version:', process.version);
+console.log('Electron version:', process.versions.electron);
+console.log('Free memory:', Math.round(os.freemem() / 1024 / 1024), 'MB');
+```
+
+### Useful Commands
+
+```bash
+# Check Ollama status
+curl http://localhost:11434/api/tags
+
+# Test image file
+file _MG_9194.CR2
+
+# Check exiftool installation
+exiftool -ver
+
+# Check dcraw installation
+dcraw
+
+# Validate XMP
+xmllint --noout file.xmp
+
+# Monitor memory usage
+top -pid $(pgrep -f electron)
+
+# Clear Node modules and reinstall
+rm -rf node_modules package-lock.json
+npm install
+```
+
+### Performance Profiling
+
+```javascript
+// Add to processingCoordinator.js
+const performanceMetrics = {
+  rawConversion: [],
+  ollamaAnalysis: [],
+  googleVision: [],
+  xmpGeneration: []
+};
+
+async function processWithMetrics(fn, metricName, ...args) {
+  const start = Date.now();
+  const result = await fn(...args);
+  const duration = Date.now() - start;
+  
+  performanceMetrics[metricName].push(duration);
+  
+  return result;
+}
+
+// After processing, report metrics
+function reportMetrics() {
+  for (const [operation, times] of Object.entries(performanceMetrics)) {
+    const avg = times.reduce((a, b) => a + b, 0) / times.length;
+    const min = Math.min(...times);
+    const max = Math.max(...times);
+    
+    console.log(`${operation}:
+      Avg: ${avg.toFixed(2)}ms
+      Min: ${min}ms
+      Max: ${max}ms
+      Total operations: ${times.length}`);
+  }
+}
+```

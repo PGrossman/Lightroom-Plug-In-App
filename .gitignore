@@ -1,72 +1,37 @@
-# Node dependencies
+# Dependencies
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+package-lock.json
+venv/
 
-# Build directories
+# Build outputs
 dist/
 build/
-out/
 
-# OS-specific
-.DS_Store
-Thumbs.db
-.AppleDouble
-.LSOverride
-Icon
+# Temporary files
+temp/
+*.log
 
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-pip-log.txt
-pip-delete-this-directory.txt
-.ipynb_checkpoints
-
-# Environment variables
+# Environment files
 .env
 .env.local
-.env.development.local
-.env.test.local
-.env.production.local
 
-# Logs
-logs/
-*.log
-*.err
-*.out
+# API credentials
+*service-account*.json
 
-# Temp files
-temp/
-*.tmp
-*.bak
-*.swp
-*.swo
-
-# SQLite & Database
-*.db
-*.sqlite
-*.db-journal
-*.db-shm
-*.db-wal
+# macOS
+.DS_Store
 
 # IDE
 .vscode/
 .idea/
-.project
-.classpath
-.settings/
-*.sublime-project
-*.sublime-workspace
+*.swp
 
-# App specific
-debug.txt
-similarity_debug.log
-errors_only.log
+# DO NOT IGNORE - Keep these folders
+!z_Logs and traces/
+!z_VERSIONS/
+!zz_Lightroom Meta Data Docs - DO NOT TOUCH/
+!zzz_CLAUDE/
+
+# But ignore large zip files in versions folder
+z_VERSIONS/*.zip
+

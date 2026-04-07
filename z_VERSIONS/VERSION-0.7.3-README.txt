@@ -1,0 +1,42 @@
+Lightroom Meta Tagger v0.7.3 - AI Analysis Tab Redesign
+
+## What's New in v0.7.3:
+- Complete redesign of AI Analysis tab with card-based layout
+- Scrollable card list showing all analyzed clusters
+- Comprehensive edit modal with all metadata fields
+- GPS integration with 'View on Map' functionality
+- Professional modal UI with scrollable content
+- Keyword management with add/remove functionality
+- Proper state management for editing
+- Updated XMP generation to work with card system
+
+## Key Features:
+- Card layout displays all analyzed clusters at once
+- Each card shows thumbnail, title, description, caption, GPS
+- Edit modal allows comprehensive metadata editing
+- GPS coordinates open in Google Maps
+- Keywords can be added/removed with visual tags
+- All changes are saved and cards refresh automatically
+- Generate XMP button creates files for all analyzed clusters
+
+## Files Included:
+- Complete source code (src/)
+- Configuration files (config.json, package.json)
+- Documentation (README.md)
+- All dependencies and utilities
+
+## Installation:
+1. Extract the zip file
+2. Run 'npm install' to install dependencies
+3. Run 'npm start' to launch the application
+
+## Usage:
+1. Scan a directory with images
+2. Process the images to create clusters
+3. Run AI Analysis on some clusters (from Visual Analysis tab)
+4. Switch to AI Analysis tab to see the new card layout
+5. Click 'Edit/Update' on any card to open the edit modal
+6. Edit metadata and save changes
+7. Click 'Generate XMP' to create XMP files for all analyzed clusters
+
+Created: Wed Oct 15 12:32:57 EDT 2025
